@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+*.class
+
+# Build outputs
+dist/
+build/
+out/
+
+# Env
+.env
+.env.local
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Os specific
+Thumbs.db

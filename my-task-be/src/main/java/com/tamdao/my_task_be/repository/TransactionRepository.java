@@ -1,0 +1,33 @@
+package com.tamdao.my_task_be.repository;
+
+import com.tamdao.my_task_be.entity.Transaction;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
+@Repository
+public interface TransactionRepository extends JpaRepository<Transaction, Long> {
+    List<Transaction> findByUserIdOrderByTransactionDateDesc(Long userId);
+    List<Transaction> findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
+            Long userId, LocalDate startDate, LocalDate endDate);
+    
+    @Query("SELECT t FROM Transaction t WHERE t.user.id = :userId AND t.transactionDate BETWEEN :startDate AND :endDate ORDER BY t.transactionDate DESC")
+    List<Transaction> findByUserIdAndDateRange(@Param("userId") Long userId, 
+                                                @Param("startDate") LocalDate startDate, 
+                                                @Param("endDate") LocalDate endDate);
+    
+    @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.user.id = :userId AND t.category.type = 'INCOME' AND t.transactionDate BETWEEN :startDate AND :endDate")
+    BigDecimal sumIncomeByUserAndDateRange(@Param("userId") Long userId, 
+                                           @Param("startDate") LocalDate startDate, 
+                                           @Param("endDate") LocalDate endDate);
+    
+    @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.user.id = :userId AND t.category.type = 'EXPENSE' AND t.transactionDate BETWEEN :startDate AND :endDate")
+    BigDecimal sumExpenseByUserAndDateRange(@Param("userId") Long userId, 
+                                            @Param("startDate") LocalDate startDate, 
+                                            @Param("endDate") LocalDate endDate);
+}
