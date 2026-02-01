@@ -8,6 +8,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -71,6 +72,10 @@ public class Task {
     )
     @Builder.Default
     private Set<Label> labels = new HashSet<>();
+    
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<PomodoroSession> pomodoroSessions = new java.util.ArrayList<>();
     
     public enum TaskStatus {
         TODO, IN_PROGRESS, REVIEW, DONE

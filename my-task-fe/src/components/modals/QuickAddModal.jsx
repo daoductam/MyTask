@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import taskService from '../../services/taskService';
 import habitService from '../../services/habitService';
 import noteService from '../../services/noteService';
+import projectService from '../../services/projectService';
+import financeService from '../../services/financeService';
+import goalService from '../../services/goalService';
 
 function QuickAddModal({ isOpen, onClose, onRefresh }) {
   const [activeTab, setActiveTab] = useState('TASK');
@@ -10,33 +13,90 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    projectId: '',
     priority: 'MEDIUM',
     dueDate: new Date().toISOString().split('T')[0],
     targetPerDay: 1,
+    amount: '',
+    type: 'EXPENSE',
+    categoryId: '',
+    targetDate: new Date().toISOString().split('T')[0],
   });
+  const [projects, setProjects] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchProjects();
+      fetchCategories();
+    }
+  }, [isOpen]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await financeService.getCategories();
+      const categoryData = response.data.data || [];
+      setCategories(categoryData);
+      // Auto-select first category of default type
+      const firstCat = categoryData.find(c => c.type === formData.type);
+      if (firstCat) {
+        setFormData(prev => ({ ...prev, categoryId: firstCat.id }));
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const fetchProjects = async () => {
+    try {
+      const response = await projectService.getProjects();
+      const projectData = response.data.data || [];
+      setProjects(projectData);
+      if (projectData.length > 0) {
+        setFormData(prev => ({ ...prev, projectId: projectData[0].id }));
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (activeTab === 'TASK') {
-        await taskService.createTask({
-          title: formData.title,
-          description: formData.description,
-          priority: formData.priority,
-          dueDate: formData.dueDate,
-        });
+          await taskService.createTask({
+            title: formData.title,
+            description: formData.description,
+            projectId: Number(formData.projectId),
+            priority: formData.priority,
+            dueDate: formData.dueDate,
+          });
       } else if (activeTab === 'HABIT') {
         await habitService.createHabit({
           name: formData.title,
           description: formData.description,
-          targetPerDay: formData.targetPerDay,
+          targetPerDay: Number(formData.targetPerDay),
           frequency: 'DAILY',
         });
       } else if (activeTab === 'NOTE') {
         await noteService.createNote({
           title: formData.title,
           content: formData.description,
+        });
+      } else if (activeTab === 'FINANCE') {
+        await financeService.createTransaction({
+          amount: Number(formData.amount),
+          type: formData.type,
+          categoryId: Number(formData.categoryId),
+          note: formData.title,
+          transactionDate: new Date().toISOString().split('T')[0],
+        });
+      } else if (activeTab === 'GOAL') {
+        await goalService.createGoal({
+          title: formData.title,
+          description: formData.description,
+          targetDate: formData.targetDate,
         });
       }
       onRefresh();
@@ -47,6 +107,10 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
          priority: 'MEDIUM',
          dueDate: new Date().toISOString().split('T')[0],
          targetPerDay: 1,
+         amount: '',
+         type: 'EXPENSE',
+         categoryId: '',
+         targetDate: new Date().toISOString().split('T')[0],
       });
     } catch (error) {
       console.error('Error adding item:', error);
@@ -59,6 +123,8 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
     { id: 'TASK', label: 'Công việc', icon: 'task_alt' },
     { id: 'HABIT', label: 'Thói quen', icon: 'bolt' },
     { id: 'NOTE', label: 'Ghi chú', icon: 'description' },
+    { id: 'FINANCE', label: 'Tài chính', icon: 'account_balance_wallet' },
+    { id: 'GOAL', label: 'Mục tiêu', icon: 'flag' },
   ];
 
   if (!isOpen) return null;
@@ -97,12 +163,29 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
-              placeholder={activeTab === 'TASK' ? 'Cần làm gì?' : activeTab === 'HABIT' ? 'Thói quen gì?' : 'Tiêu đề ghi chú...'}
+              placeholder={
+                activeTab === 'TASK' ? 'Cần làm gì?' : 
+                activeTab === 'HABIT' ? 'Thói quen gì?' : 
+                activeTab === 'NOTE' ? 'Tiêu đề ghi chú...' :
+                activeTab === 'FINANCE' ? 'Ghi chú giao dịch...' :
+                'Tiêu đề mục tiêu...'
+              }
             />
           </div>
 
           {activeTab === 'TASK' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Dự án</label>
+                <select
+                  value={formData.projectId}
+                  onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
+                  className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold appearance-none"
+                >
+                  {projects.map(p => <option key={p.id} value={p.id} className="bg-slate-800">{p.name}</option>)}
+                  {projects.length === 0 && <option value="" disabled className="bg-slate-800">Chưa có dự án</option>}
+                </select>
+              </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Ưu tiên</label>
                 <select
@@ -135,6 +218,59 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
                 min="1"
                 value={formData.targetPerDay}
                 onChange={(e) => setFormData({ ...formData, targetPerDay: e.target.value })}
+                className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+              />
+            </div>
+          )}
+
+          {activeTab === 'FINANCE' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Số tiền</label>
+                <input
+                  type="number"
+                  required
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Loại</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold appearance-none"
+                >
+                  <option value="EXPENSE" className="bg-slate-800">Chi tiêu</option>
+                  <option value="INCOME" className="bg-slate-800">Thu nhập</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Danh mục</label>
+                <select
+                  value={formData.categoryId}
+                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                  className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold appearance-none"
+                >
+                  {categories.filter(c => c.type === formData.type).map(c => (
+                    <option key={c.id} value={c.id} className="bg-slate-800 text-white">{c.name}</option>
+                  ))}
+                  {categories.filter(c => c.type === formData.type).length === 0 && <option value="" disabled className="bg-slate-800 text-white">Chưa có danh mục</option>}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'GOAL' && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-[0.2em] ml-1">Ngày hoàn thành dự kiến</label>
+              <input
+                type="date"
+                required
+                value={formData.targetDate}
+                onChange={(e) => setFormData({ ...formData, targetDate: e.target.value })}
                 className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
               />
             </div>

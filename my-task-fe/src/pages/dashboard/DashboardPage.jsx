@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import dashboardService from '../../services/dashboardService';
 import Header from '../../components/layout/Header';
 import QuickAddModal from '../../components/modals/QuickAddModal';
 
 function DashboardPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -35,13 +37,20 @@ function DashboardPage() {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value);
   };
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Chào buổi sáng!';
+    if (hour < 18) return 'Chào buổi chiều!';
+    return 'Chào buổi tối!';
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
       <Header />
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 mb-8">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-            Chào buổi sáng! <span className="animate-pulse inline-block">👋</span>
+            {getGreeting()} <span className="animate-pulse inline-block">👋</span>
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-lg">Đây là tổng quan năng suất của bạn hôm nay.</p>
         </div>
@@ -163,7 +172,12 @@ function DashboardPage() {
               <span className="w-2 h-6 bg-primary rounded-full"></span>
               Công việc ưu tiên
             </h2>
-            <button className="text-sm text-primary hover:text-violet-400 font-medium transition-colors">Xem tất cả</button>
+            <button 
+              onClick={() => navigate('/tasks')}
+              className="text-sm text-primary hover:text-violet-400 font-medium transition-colors"
+            >
+              Xem tất cả
+            </button>
           </div>
           <div className="space-y-3">
             {data?.recentTasks?.length > 0 ? data.recentTasks.map((task) => (
@@ -174,10 +188,17 @@ function DashboardPage() {
                 <div className="flex-1 ml-2">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{task.title}</h4>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{task.project?.name || 'Chưa phân loại'}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{task.projectName || 'Chưa phân loại'}</span>
                     <span className="w-1 h-1 rounded-full bg-slate-400"></span>
                     <span className="text-xs text-slate-400 flex items-center gap-1">
-                      <span className="material-icons-round text-[10px]">schedule</span> {task.dueDate ? new Date(task.dueDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Không có hạn'}
+                      {task.dueDate ? (
+                        <>
+                          <span className="material-icons-round text-[10px]">schedule</span>
+                          {new Date(task.dueDate).toLocaleDateString('vi-VN')}
+                        </>
+                      ) : (
+                        <span>Không có hạn</span>
+                      )}
                     </span>
                   </div>
                 </div>

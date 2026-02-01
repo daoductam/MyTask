@@ -96,8 +96,11 @@ public class TaskService {
         if (request.getAssigneeId() != null) {
             assignee = userRepository.findById(request.getAssigneeId())
                     .orElseThrow(() -> new ResourceNotFoundException("User", request.getAssigneeId()));
+        } else {
+            // Default assignee to creator for personal tasks
+            assignee = user;
         }
-        
+       
         Set<Label> labels = new HashSet<>();
         if (request.getLabelIds() != null && !request.getLabelIds().isEmpty()) {
             labels = new HashSet<>(labelRepository.findAllById(request.getLabelIds()));
