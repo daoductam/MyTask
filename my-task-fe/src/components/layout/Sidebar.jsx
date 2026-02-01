@@ -44,7 +44,7 @@ function Sidebar() {
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/30 shrink-0">
               <span className="material-icons-round text-2xl">dashboard</span>
             </div>
-            <h2 className="text-xl font-bold dark:text-white tracking-tight">LifeDash</h2>
+            <h2 className="text-xl font-bold dark:text-white tracking-tight">MyTask</h2>
           </div>
           {/* Mobile Close Button */}
           <button onClick={closeSidebar} className="md:hidden text-slate-400 hover:text-white">

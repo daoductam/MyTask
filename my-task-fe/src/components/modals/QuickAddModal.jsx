@@ -66,7 +66,7 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-lg glass-panel rounded-3xl p-6 md:p-8 shadow-2xl overflow-hidden border-t border-white/20">
+      <div className="relative w-full max-w-lg glass-panel rounded-3xl p-6 md:p-8 shadow-2xl animate-scale-in border-t border-slate-100 dark:border-white/20 max-h-[90vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-2xl font-black text-white tracking-tight italic">Quick Add</h3>
           <button onClick={onClose} className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 hover:text-white transition-all">

@@ -15,7 +15,7 @@ Xây dựng ứng dụng web quản lý cuộc sống cá nhân với các tính
 ## User Review Required
 
 > [!NOTE]
-> **Confirmed**: Spring Boot 3.2.x, Groq API Key ready, Deploy to Render/Vercel/Railway
+> **Xác nhận**: Spring Boot 3.2.x, Groq API Key đã sẵn sàng, Deploy lên Render/Vercel/Aiven
 
 ---
 
@@ -362,16 +362,16 @@ Ngoài Task Management như Jira/ClickUp, ứng dụng sẽ bổ sung các tính
 
 ## Deployment Strategy
 
-| Service | Platform | Purpose |
+| Dịch vụ | Nền tảng | Mục đích |
 |---------|----------|---------|
-| Backend API | **Railway** | Spring Boot app + MySQL database |
+| Backend API | **Render** | Ứng dụng Spring Boot |
+| Cơ sở dữ liệu | **Aiven** | MySQL Database managed |
 | Frontend | **Vercel** | React static files với CDN |
-| Backup/Staging | **Render** | Alternative deployment option |
 
 ### Environment Configuration
 ```properties
-# Production (Railway)
-SPRING_DATASOURCE_URL=jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}
+# Production (Aiven)
+SPRING_DATASOURCE_URL=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=true&requireSSL=true
 GROQ_API_KEY=${GROQ_API_KEY}
 JWT_SECRET=${JWT_SECRET}
 CORS_ALLOWED_ORIGINS=https://mytask.vercel.app

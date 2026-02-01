@@ -267,7 +267,7 @@ function FinancePage() {
       {showModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-          <div className="relative w-full max-w-lg glass-panel rounded-3xl shadow-2xl overflow-hidden animate-scale-in border-t border-slate-100 dark:border-white/20">
+          <div className="relative w-full max-w-lg glass-panel rounded-3xl shadow-2xl animate-scale-in border-t border-slate-100 dark:border-white/20 max-h-[90vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
             <div className="p-6 md:p-8 border-b border-slate-100 dark:border-white/5 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800 dark:text-white">{selectedTransaction ? 'Chỉnh sửa giao dịch' : 'Giao dịch mới'}</h3>
               <button onClick={() => { setShowModal(false); setSelectedTransaction(null); }} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-white hover:bg-slate-200 dark:hover:bg-white/20 transition-all">

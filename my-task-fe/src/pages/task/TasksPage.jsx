@@ -306,7 +306,7 @@ function TasksPage() {
       {showModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-          <div className="relative w-full max-w-lg glass-panel rounded-3xl shadow-2xl overflow-hidden animate-scale-in">
+          <div className="relative w-full max-w-lg glass-panel rounded-3xl shadow-2xl animate-scale-in border-t border-slate-100 dark:border-white/10 max-h-[90vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
             <div className="p-6 border-b border-slate-100 dark:border-white/5 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800 dark:text-white">Thêm công việc mới</h3>
               <button 

@@ -299,7 +299,7 @@ function NotesPage() {
       {showFolderModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowFolderModal(false)}></div>
-          <div className="relative w-full max-w-sm glass-panel rounded-3xl p-6 shadow-2xl animate-scale-in border-t border-slate-100 dark:border-white/20">
+          <div className="relative w-full max-w-sm glass-panel rounded-3xl p-6 shadow-2xl animate-scale-in border-t border-slate-100 dark:border-white/20 max-h-[90vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
              <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Thư mục mới</h3>
              <form onSubmit={handleCreateFolder}>
                 <input 
