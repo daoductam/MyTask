@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import projectService from '../../services/projectService';
 import taskService from '../../services/taskService';
 import Header from '../../components/layout/Header';
+import TaskDetailModal from '../../components/modals/TaskDetailModal';
+import { formatDateStrict } from '../../utils/dateUtils';
 
 function ProjectDetailPage() {
   const { id } = useParams();
@@ -19,6 +21,8 @@ function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [viewingTask, setViewingTask] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -32,8 +36,8 @@ function ProjectDetailPage() {
     fetchProjectData();
   }, [id]);
 
-  const fetchProjectData = async () => {
-    setLoading(true);
+  const fetchProjectData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [projectRes, kanbanRes] = await Promise.all([
         projectService.getProjectById(id),
@@ -74,20 +78,28 @@ function ProjectDetailPage() {
         priority: 'MEDIUM',
         dueDate: ''
       });
-      fetchProjectData();
+      fetchProjectData(true);
     } catch (error) {
       console.error('Error saving task:', error);
     }
   };
 
   const handleDeleteTask = async (taskId) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa công việc này?')) {
-      try {
-        await taskService.deleteTask(taskId);
-        fetchProjectData();
-      } catch (error) {
-        console.error('Error deleting task:', error);
-      }
+    try {
+      // Optimistic Update
+      setKanbanTasks(prev => {
+        const newState = { ...prev };
+        Object.keys(newState).forEach(key => {
+          newState[key] = newState[key].filter(t => t.id !== taskId);
+        });
+        return newState;
+      });
+      await taskService.deleteTask(taskId);
+      fetchProjectData(true);
+      setShowDetailModal(false); // Close detail modal if task deleted
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      fetchProjectData(true);
     }
   };
 
@@ -115,6 +127,12 @@ function ProjectDetailPage() {
       dueDate: task.dueDate ? task.dueDate.split('T')[0] : ''
     });
     setShowTaskModal(true);
+    setShowDetailModal(false); // Close detail modal when opening edit modal
+  };
+  
+  const handleViewTask = (task) => {
+    setViewingTask(task);
+    setShowDetailModal(true);
   };
 
   // Drag and Drop Handlers
@@ -155,10 +173,10 @@ function ProjectDetailPage() {
       }
 
       await taskService.updateTaskStatus(taskId, targetStatus);
-      fetchProjectData(); // Refresh to get updated stats/order
+      fetchProjectData(true); // Refresh to get updated stats/order
     } catch (error) {
       console.error('Error updating task status:', error);
-      fetchProjectData(); // Revert on error
+      fetchProjectData(true); // Revert on error
     }
   };
 
@@ -229,7 +247,7 @@ function ProjectDetailPage() {
                 <span className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[9px] font-black uppercase tracking-widest">{project.status}</span>
               </div>
               <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span> {project.dueDate ? new Date(project.dueDate).toLocaleDateString('vi-VN') : 'KHÔNG HẠN'}</span>
+                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span> {project.dueDate ? formatDateStrict(project.dueDate) : 'KHÔNG HẠN'}</span>
                 <span className="flex items-center gap-1"><span className="material-icons-round text-sm">assignment</span> {project.taskCount} TASKS</span>
               </div>
             </div>
@@ -277,17 +295,18 @@ function ProjectDetailPage() {
                     draggable
                     onDragStart={(e) => handleDragStart(e, task.id, col.key)}
                     onDragEnd={handleDragEnd}
-                    className="glass-panel p-4 rounded-2xl cursor-grab active:cursor-grabbing group hover:border-primary/40 transition-all duration-300 relative overflow-hidden shadow-sm shrink-0"
+                    onClick={() => handleViewTask(task)}
+                    className="glass-panel p-4 rounded-2xl cursor-pointer active:cursor-grabbing group hover:border-primary/40 transition-all duration-300 relative overflow-hidden shadow-sm shrink-0"
                   >
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                       <button 
-                        onClick={() => openEditTaskModal(task)}
+                        onClick={(e) => { e.stopPropagation(); openEditTaskModal(task); }}
                         className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
                       >
                         <span className="material-icons-round text-sm">edit</span>
                       </button>
                       <button 
-                        onClick={() => handleDeleteTask(task.id)}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
                         className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                       >
                         <span className="material-icons-round text-sm">delete</span>
@@ -308,7 +327,7 @@ function ProjectDetailPage() {
                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-100 dark:border-white/5">
                       <div className="flex items-center gap-1.5 text-[8px] font-bold text-slate-500 tracking-widest uppercase truncate mr-2">
                         <span className="material-icons-round text-xs">schedule</span>
-                        <span className="truncate">{task.dueDate ? new Date(task.dueDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : 'N/A'}</span>
+                        <span className="truncate">{task.dueDate ? formatDateStrict(task.dueDate) : 'N/A'}</span>
                       </div>
                       <img className="w-5 h-5 rounded-full border border-slate-200 dark:border-white/10 shrink-0" src={`https://ui-avatars.com/api/?name=${task.assigneeName || 'U'}&background=random&size=32&font-size=0.5`} alt="assignee" />
                     </div>
@@ -368,6 +387,14 @@ function ProjectDetailPage() {
           </div>
         </div>
       )}
+
+      <TaskDetailModal 
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        task={viewingTask}
+        onEdit={openEditTaskModal}
+        onDelete={handleDeleteTask}
+      />
 
       <style>{`
         .animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }

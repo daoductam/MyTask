@@ -3,6 +3,7 @@ package com.tamdao.my_task_be.controller;
 import com.tamdao.my_task_be.dto.request.NoteRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
 import com.tamdao.my_task_be.dto.response.NoteResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.entity.NoteFolder;
 import com.tamdao.my_task_be.service.NoteService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,16 +29,20 @@ public class NoteController {
     
     @GetMapping
     @Operation(summary = "Lấy tất cả Notes của user")
-    public ResponseEntity<ApiResponse<List<NoteResponse>>> getAllNotes() {
-        List<NoteResponse> notes = noteService.getAllNotes();
+    public ResponseEntity<ApiResponse<PageResponse<NoteResponse>>> getAllNotes(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageResponse<NoteResponse> notes = noteService.getAllNotes(page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách notes thành công", notes));
     }
     
     @GetMapping("/folder/{folderId}")
     @Operation(summary = "Lấy Notes theo Folder")
-    public ResponseEntity<ApiResponse<List<NoteResponse>>> getNotesByFolder(
-            @PathVariable(required = false) Long folderId) {
-        List<NoteResponse> notes = noteService.getNotesByFolder(folderId);
+    public ResponseEntity<ApiResponse<PageResponse<NoteResponse>>> getNotesByFolder(
+            @PathVariable(required = false) Long folderId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageResponse<NoteResponse> notes = noteService.getNotesByFolder(folderId, page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy notes thành công", notes));
     }
     

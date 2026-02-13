@@ -1,8 +1,10 @@
 import apiClient from './apiClient';
 
 const habitService = {
-  getAllHabits: (date) => {
-    return apiClient.get(date ? `/habits?date=${date}` : '/habits');
+  getAllHabits: (date, page = 0, size = 10) => {
+    let url = `/habits?page=${page}&size=${size}`;
+    if (date) url += `&date=${date}`;
+    return apiClient.get(url);
   },
   getHabitById: (id) => {
     return apiClient.get(`/habits/${id}`);

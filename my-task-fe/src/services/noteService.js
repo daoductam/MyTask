@@ -1,11 +1,11 @@
 import apiClient from './apiClient';
 
 const noteService = {
-  getAllNotes: () => {
-    return apiClient.get('/notes');
+  getAllNotes: (page = 0, size = 20) => {
+    return apiClient.get(`/notes?page=${page}&size=${size}`);
   },
-  getNotesByFolder: (folderId) => {
-    return apiClient.get(folderId ? `/notes/folder/${folderId}` : '/notes/folder/0');
+  getNotesByFolder: (folderId, page = 0, size = 20) => {
+    return apiClient.get(folderId ? `/notes/folder/${folderId}?page=${page}&size=${size}` : `/notes/folder/0?page=${page}&size=${size}`);
   },
   getNoteById: (id) => {
     return apiClient.get(`/notes/${id}`);

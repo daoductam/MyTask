@@ -75,14 +75,8 @@ function PomodoroPage() {
 
   const fetchTasks = async () => {
     try {
-      const response = await taskService.getKanbanTasks();
-      const kanban = response.data.data;
-      const allTasks = [
-        ...(kanban.TODO || []),
-        ...(kanban.IN_PROGRESS || []),
-        ...(kanban.REVIEW || [])
-      ];
-      setTasks(allTasks);
+      const response = await taskService.getAllTasks(0, 50, 'IN_PROGRESS');
+      setTasks(response.data.data.content || []);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
@@ -129,15 +123,17 @@ function PomodoroPage() {
   };
 
   const handleDeleteSession = async (id) => {
-     if (window.confirm('Xóa phiên này khỏi lịch sử?')) {
-        try {
-           await pomodoroService.deleteSession(id);
-           fetchTodaySessions();
-           fetchTodayStats();
-        } catch (error) {
-           console.error('Error deleting session:', error);
-        }
-     }
+    try {
+      // Optimistic Update
+      setSessions(prev => prev.filter(s => s.id !== id));
+      await pomodoroService.deleteSession(id);
+      fetchTodaySessions();
+      fetchTodayStats();
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      fetchTodaySessions();
+      fetchTodayStats();
+    }
   };
 
   const changeMode = (newMode) => {

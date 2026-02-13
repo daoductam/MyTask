@@ -1,10 +1,10 @@
 import apiClient from './apiClient';
 
 const projectService = {
-  getProjects: (status) => {
-    let url = '/projects';
+  getProjects: (status, page = 0, size = 10) => {
+    let url = `/projects?page=${page}&size=${size}`;
     if (status && status !== 'ALL') {
-      url += `?status=${status}`;
+      url += `&status=${status}`;
     }
     return apiClient.get(url);
   },

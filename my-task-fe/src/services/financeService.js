@@ -1,8 +1,8 @@
 import apiClient from './apiClient';
 
 const financeService = {
-  getTransactions: (year, month) => {
-    return apiClient.get(`/finance/transactions?year=${year}&month=${month + 1}`);
+  getTransactions: (year, month, page = 0, size = 20) => {
+    return apiClient.get(`/finance/transactions?year=${year}&month=${month + 1}&page=${page}&size=${size}`);
   },
   getTransactionById: (id) => {
     return apiClient.get(`/finance/transactions/${id}`);
@@ -24,6 +24,12 @@ const financeService = {
   },
   createCategory: (categoryData) => {
     return apiClient.post('/finance/categories', categoryData);
+  },
+  getTransactionsByDateRange: (startDate, endDate, page = 0, size = 20) => {
+    return apiClient.get(`/finance/transactions/by-date?startDate=${startDate}&endDate=${endDate}&page=${page}&size=${size}`);
+  },
+  getCategoryStatistics: (startDate, endDate) => {
+    return apiClient.get(`/finance/statistics/by-category?startDate=${startDate}&endDate=${endDate}`);
   }
 };
 

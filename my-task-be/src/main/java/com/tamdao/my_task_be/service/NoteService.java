@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.NoteRequest;
 import com.tamdao.my_task_be.dto.response.NoteResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.entity.Note;
 import com.tamdao.my_task_be.entity.NoteFolder;
 import com.tamdao.my_task_be.entity.User;
@@ -11,6 +12,9 @@ import com.tamdao.my_task_be.repository.NoteFolderRepository;
 import com.tamdao.my_task_be.repository.NoteRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,15 +36,28 @@ public class NoteService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy người dùng"));
     }
     
-    public List<NoteResponse> getAllNotes() {
+    public PageResponse<NoteResponse> getAllNotes(int page, int size) {
         User user = getCurrentUser();
-        return noteRepository.findByUserIdOrderByIsPinnedDescUpdatedAtDesc(user.getId()).stream()
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Note> notePage = noteRepository.findByUserIdOrderByIsPinnedDescUpdatedAtDesc(user.getId(), pageable);
+        
+        List<NoteResponse> content = notePage.getContent().stream()
                 .map(NoteResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<NoteResponse>builder()
+                .content(content)
+                .pageNumber(notePage.getNumber())
+                .pageSize(notePage.getSize())
+                .totalElements(notePage.getTotalElements())
+                .totalPages(notePage.getTotalPages())
+                .last(notePage.isLast())
+                .build();
     }
     
-    public List<NoteResponse> getNotesByFolder(Long folderId) {
+    public PageResponse<NoteResponse> getNotesByFolder(Long folderId, int page, int size) {
         User user = getCurrentUser();
+        Pageable pageable = PageRequest.of(page, size);
         
         if (folderId != null) {
             NoteFolder folder = noteFolderRepository.findById(folderId)
@@ -51,9 +68,20 @@ public class NoteService {
             }
         }
         
-        return noteRepository.findByUserIdAndFolderIdOrderByIsPinnedDescUpdatedAtDesc(user.getId(), folderId).stream()
+        Page<Note> notePage = noteRepository.findByUserIdAndFolderIdOrderByIsPinnedDescUpdatedAtDesc(user.getId(), folderId, pageable);
+        
+        List<NoteResponse> content = notePage.getContent().stream()
                 .map(NoteResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<NoteResponse>builder()
+                .content(content)
+                .pageNumber(notePage.getNumber())
+                .pageSize(notePage.getSize())
+                .totalElements(notePage.getTotalElements())
+                .totalPages(notePage.getTotalPages())
+                .last(notePage.isLast())
+                .build();
     }
     
     public NoteResponse getNoteById(Long id) {
@@ -179,12 +207,8 @@ public class NoteService {
             throw new BadRequestException("Bạn không có quyền xóa folder này");
         }
         
-        // Move notes to no folder
-        noteRepository.findByUserIdAndFolderIdOrderByIsPinnedDescUpdatedAtDesc(user.getId(), id)
-                .forEach(note -> {
-                    note.setFolder(null);
-                    noteRepository.save(note);
-                });
+        // Delete all notes in this folder
+        noteRepository.deleteByFolderId(id);
         
         noteFolderRepository.delete(folder);
     }

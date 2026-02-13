@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import financeService from '../../services/financeService';
 import Header from '../../components/layout/Header';
 import { useLayout } from '../../context/LayoutContext';
+import ConfirmModal from '../../components/common/ConfirmModal';
+import { formatDateStrict } from '../../utils/dateUtils';
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 
 function FinancePage() {
   const { toggleSidebar } = useLayout();
@@ -25,21 +28,57 @@ function FinancePage() {
     note: '',
     transactionDate: new Date().toISOString().split('T')[0]
   });
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pageSize] = useState(20);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    transactionId: null
+  });
+  const [viewMode, setViewMode] = useState('month'); // 'day', 'week', 'month'
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dateRange, setDateRange] = useState({
+    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
+  const [statistics, setStatistics] = useState({
+    expenseByCategory: [],
+    incomeByCategory: [],
+    totalExpense: 0,
+    totalIncome: 0
+  });
 
   useEffect(() => {
-    fetchData();
+    fetchData(0);
     fetchCategories();
-  }, [currentMonth, currentYear]);
+    fetchStatistics();
+  }, [currentMonth, currentYear, viewMode, selectedDate, dateRange]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (pageNum = 0, silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const [transactionsRes, summaryRes] = await Promise.all([
-        financeService.getTransactions(currentYear, currentMonth),
-        financeService.getMonthlySummary(currentYear, currentMonth)
-      ]);
+      let transactionsRes, summaryRes;
       
-      setTransactions(transactionsRes.data.data || []);
+      if (viewMode === 'month') {
+        [transactionsRes, summaryRes] = await Promise.all([
+          financeService.getTransactions(currentYear, currentMonth, pageNum, pageSize),
+          financeService.getMonthlySummary(currentYear, currentMonth)
+        ]);
+      } else {
+        // Use date range for day/week/custom views
+        [transactionsRes, summaryRes] = await Promise.all([
+          financeService.getTransactionsByDateRange(dateRange.start, dateRange.end, pageNum, pageSize),
+          financeService.getMonthlySummary(currentYear, currentMonth) // Keep monthly summary for now
+        ]);
+      }
+      
+      const pageData = transactionsRes.data.data;
+      setTransactions(pageData.content || []);
+      setHasMore(!pageData.last);
+      setPage(pageData.pageNumber);
+      setTotalPages(pageData.totalPages);
       
       const summaryData = summaryRes.data.data;
       setSummary({
@@ -52,6 +91,28 @@ function FinancePage() {
       console.error('Error fetching finance data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStatistics = async () => {
+    try {
+      const start = viewMode === 'month' 
+        ? new Date(currentYear, currentMonth, 1).toISOString().split('T')[0]
+        : dateRange.start;
+      const end = viewMode === 'month'
+        ? new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0]
+        : dateRange.end;
+        
+      const response = await financeService.getCategoryStatistics(start, end);
+      const data = response.data.data;
+      setStatistics({
+        expenseByCategory: data.expenseByCategory || [],
+        incomeByCategory: data.incomeByCategory || [],
+        totalExpense: data.totalExpense || 0,
+        totalIncome: data.totalIncome || 0
+      });
+    } catch (error) {
+      console.error('Error fetching statistics:', error);
     }
   };
 
@@ -91,7 +152,7 @@ function FinancePage() {
         note: '',
         transactionDate: new Date().toISOString().split('T')[0]
       });
-      fetchData();
+      fetchData(page, true);
     } catch (error) {
       console.error('Error saving transaction:', error);
       alert('Có lỗi xảy ra khi lưu giao dịch.');
@@ -110,20 +171,67 @@ function FinancePage() {
     setShowModal(true);
   };
 
-  const handleDeleteTransaction = async (id) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) {
-      try {
-        await financeService.deleteTransaction(id);
-        fetchData();
-      } catch (error) {
-        console.error('Error deleting transaction:', error);
-      }
+  const handleDeleteTransaction = (id) => {
+    setConfirmModal({
+      isOpen: true,
+      transactionId: id
+    });
+  };
+
+  const executeDeleteTransaction = async () => {
+    if (!confirmModal.transactionId) return;
+    try {
+      await financeService.deleteTransaction(confirmModal.transactionId);
+      fetchData(page, true);
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
     }
   };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
+
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+    const today = new Date();
+    
+    switch(mode) {
+      case 'day':
+        setDateRange({
+          start: selectedDate,
+          end: selectedDate
+        });
+        break;
+      case 'week':
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        setDateRange({
+          start: weekStart.toISOString().split('T')[0],
+          end: weekEnd.toISOString().split('T')[0]
+        });
+        break;
+      case 'month':
+        // Will use currentMonth and currentYear
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleDateChange = (date) => {
+    setSelectedDate(date);
+    if (viewMode === 'day') {
+      setDateRange({
+        start: date,
+        end: date
+      });
+    }
+  };
+
+  const COLORS = ['#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6', '#14B8A6', '#F97316'];
 
   if (loading && transactions.length === 0) {
       return (
@@ -190,6 +298,135 @@ function FinancePage() {
         </div>
       </div>
 
+      {/* Date Filter Section */}
+      <div className="glass-panel p-6 rounded-3xl mb-6 shrink-0">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+          <div className="flex items-center gap-2">
+            <span className="material-icons-round text-primary">calendar_today</span>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Lọc theo thời gian</h3>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleViewModeChange('day')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  viewMode === 'day'
+                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                }`}
+              >
+                Hôm nay
+              </button>
+              <button
+                onClick={() => handleViewModeChange('week')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  viewMode === 'week'
+                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                }`}
+              >
+                Tuần này
+              </button>
+              <button
+                onClick={() => handleViewModeChange('month')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  viewMode === 'month'
+                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                }`}
+              >
+                Tháng này
+              </button>
+            </div>
+            
+            {viewMode === 'day' && (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="px-4 py-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+              />
+            )}
+            
+            {viewMode === 'week' && (
+              <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                <span>{dateRange.start}</span>
+                <span>→</span>
+                <span>{dateRange.end}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Statistics Section with Pie Chart */}
+      {statistics.expenseByCategory.length > 0 && (
+        <div className="glass-panel p-6 rounded-3xl mb-6 shrink-0">
+          <div className="flex items-center gap-2 mb-6">
+            <span className="material-icons-round text-primary">pie_chart</span>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Thống kê chi tiêu theo danh mục</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Pie Chart */}
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statistics.expenseByCategory}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {statistics.expenseByCategory.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(value)}
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '8px 12px'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
+            {/* Category List */}
+            <div className="space-y-3">
+              {statistics.expenseByCategory.map((item, index) => {
+                const percentage = statistics.totalExpense > 0 
+                  ? (item.value / statistics.totalExpense * 100).toFixed(1)
+                  : 0;
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      ></div>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">{formatCurrency(item.value)}</p>
+                      <p className="text-xs text-slate-500">{percentage}%</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
           <span className="w-2 h-6 bg-primary rounded-full"></span>
@@ -228,7 +465,7 @@ function FinancePage() {
                   </td>
                   <td className="p-4">
                     <p className="text-sm font-bold text-slate-800 dark:text-white">{tx.note || tx.categoryName}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{tx.categoryName} • {new Date(tx.transactionDate).toLocaleDateString('vi-VN')}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{tx.categoryName} • {formatDateStrict(tx.transactionDate)}</p>
                   </td>
                   <td className="p-4 text-right">
                     <span className={`text-sm font-bold ${tx.type === 'INCOME' ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -261,6 +498,65 @@ function FinancePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 0 && (
+          <div className="p-4 border-t border-slate-200 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50 dark:bg-white/5">
+            <p className="text-xs text-slate-500 order-2 sm:order-1">
+              Hiển thị trang {page + 1} trên tổng số {totalPages} trang
+            </p>
+            <div className="flex items-center gap-1 order-1 sm:order-2">
+              <button 
+                disabled={page === 0}
+                onClick={() => fetchData(page - 1)}
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:border-primary hover:text-primary"
+                title="Trang trước"
+              >
+                <span className="material-icons-round text-lg">chevron_left</span>
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {[...Array(totalPages)].map((_, i) => {
+                  // Show current page, first, last, and 1 page around current
+                  if (
+                    i === 0 || 
+                    i === totalPages - 1 || 
+                    (i >= page - 1 && i <= page + 1)
+                  ) {
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => fetchData(i)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-lg text-sm font-bold transition-all border ${
+                          page === i 
+                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 text-slate-500 hover:border-primary hover:text-primary'
+                        }`}
+                      >
+                        {i + 1}
+                      </button>
+                    );
+                  } else if (
+                    (i === 1 && page > 2) || 
+                    (i === totalPages - 2 && page < totalPages - 3)
+                  ) {
+                    return <span key={i} className="text-slate-400 px-1">...</span>;
+                  }
+                  return null;
+                })}
+              </div>
+
+              <button 
+                disabled={page >= totalPages - 1}
+                onClick={() => fetchData(page + 1)}
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:border-primary hover:text-primary"
+                title="Trang tiếp"
+              >
+                <span className="material-icons-round text-lg">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Transaction Modal */}
@@ -370,6 +666,14 @@ function FinancePage() {
         </div>
       )}
 
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={executeDeleteTransaction}
+        title="Xóa giao dịch"
+        message="Bạn có chắc chắn muốn xóa giao dịch này? Số dư của bạn sẽ được cập nhật lại tương ứng."
+      />
+      
       <style>{`
         .animate-scale-in { animation: scale-in 0.3s ease-out forwards; }
         @keyframes scale-in { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }

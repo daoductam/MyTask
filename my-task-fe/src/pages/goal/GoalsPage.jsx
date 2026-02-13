@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import goalService from '../../services/goalService';
 import { useLayout } from '../../context/LayoutContext';
+import ConfirmModal from '../../components/common/ConfirmModal';
+import { formatDateStrict } from '../../utils/dateUtils';
 
 function GoalsPage() {
   const { toggleSidebar } = useLayout();
@@ -15,20 +17,52 @@ function GoalsPage() {
     targetDate: new Date().toISOString().split('T')[0],
   });
   const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [totalGoalsCount, setTotalGoalsCount] = useState(0);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    goalId: null
+  });
+  const [completedGoalsCount, setCompletedGoalsCount] = useState(0);
 
-  const fetchGoals = useCallback(async () => {
-    setLoading(true);
+  const fetchGoals = useCallback(async (pageNum = 0, append = false, silent = false) => {
+    if (pageNum === 0 && !silent) setLoading(true);
+    else if (pageNum !== 0 && !silent) setIsFetchingMore(true);
+    
     try {
-      const response = await goalService.getAllGoals();
-      const goalsData = response.data.data || [];
-      setGoals(goalsData);
+      const response = await goalService.getAllGoals(pageNum);
+      const pageData = response.data.data;
+      const goalsData = pageData.content || [];
       
-      if (goalsData.length > 0) {
+      let updatedGoals;
+      if (append) {
+        updatedGoals = [...goals, ...goalsData];
+      } else {
+        updatedGoals = goalsData;
+      }
+      
+      setGoals(updatedGoals);
+      setTotalGoalsCount(pageData.totalElements);
+      // For now, completedGoalsCount is recalculated from what's loaded, 
+      // or we could just use the same logic if we want total stats.
+      // Since it's a small app, maybe we fetch all for stats? 
+      // But let's stay paginated. Recalculate from all loaded.
+      setCompletedGoalsCount(updatedGoals.filter(g => g.progress === 100).length);
+      
+      setHasMore(!pageData.last);
+      setPage(pageData.pageNumber);
+      setTotalPages(pageData.totalPages);
+      
+      if (updatedGoals.length > 0) {
         if (selectedGoal) {
-          const updatedSelected = goalsData.find(g => g.id === selectedGoal.id);
-          setSelectedGoal(updatedSelected || goalsData[0]);
-        } else {
-          setSelectedGoal(goalsData[0]);
+          const updatedSelected = updatedGoals.find(g => g.id === selectedGoal.id);
+          if (updatedSelected) setSelectedGoal(updatedSelected);
+          // if not found in current set (maybe deleted), we keep current or set to first
+        } else if (!append) {
+          setSelectedGoal(updatedGoals[0]);
         }
       } else {
         setSelectedGoal(null);
@@ -37,8 +71,10 @@ function GoalsPage() {
       console.error('Error fetching goals:', error);
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
-  }, [selectedGoal]);
+  }, [goals, selectedGoal]);
+
 
   useEffect(() => {
     fetchGoals();
@@ -60,7 +96,7 @@ function GoalsPage() {
         description: '',
         targetDate: new Date().toISOString().split('T')[0],
       });
-      fetchGoals();
+      fetchGoals(page, false, true);
     } catch (error) {
       console.error('Error saving goal:', error);
       alert('Có lỗi xảy ra khi lưu mục tiêu.');
@@ -89,29 +125,47 @@ function GoalsPage() {
     setShowModal(true);
   };
 
-  const handleDeleteGoal = async (e, id) => {
+  const handleDeleteGoal = (e, id) => {
     e.stopPropagation();
-    if (window.confirm('Xóa mục tiêu này sẽ không thể khôi phục. Tiếp tục?')) {
-      try {
-        await goalService.deleteGoal(id);
-        if (selectedGoal?.id === id) setSelectedGoal(null);
-        fetchGoals();
-      } catch (error) {
-        console.error('Error deleting goal:', error);
-      }
+    setConfirmModal({
+      isOpen: true,
+      goalId: id
+    });
+  };
+
+  const executeDeleteGoal = async () => {
+    if (!confirmModal.goalId) return;
+    try {
+      await goalService.deleteGoal(confirmModal.goalId);
+      if (selectedGoal?.id === confirmModal.goalId) setSelectedGoal(null);
+      fetchGoals(page, false, true);
+    } catch (error) {
+      console.error('Error deleting goal:', error);
     }
   };
 
   const handleToggleMilestone = async (milestoneId) => {
+    // Optimistic UI update
+    const updatedSelectedGoal = {
+      ...selectedGoal,
+      milestones: selectedGoal.milestones.map(m => 
+        m.id === milestoneId ? { ...m, isCompleted: !m.isCompleted } : m
+      )
+    };
+    setSelectedGoal(updatedSelectedGoal);
+    setGoals(prev => prev.map(g => g.id === updatedSelectedGoal.id ? updatedSelectedGoal : g));
+
     try {
       await goalService.toggleMilestone(milestoneId);
-      // Re-fetch detail for selected goal
+      // Wait a bit or re-fetch to sync
       const resp = await goalService.getGoalById(selectedGoal.id);
-      const updatedGoal = resp.data.data;
-      setSelectedGoal(updatedGoal);
-      setGoals(goals.map(g => g.id === updatedGoal.id ? updatedGoal : g));
+      const serverGoal = resp.data.data;
+      setSelectedGoal(serverGoal);
+      setGoals(prev => prev.map(g => g.id === serverGoal.id ? serverGoal : g));
     } catch (error) {
       console.error('Error toggling milestone:', error);
+      // Revert if error (simpler to just re-fetch)
+      fetchGoals(page, false, true);
     }
   };
 
@@ -132,22 +186,33 @@ function GoalsPage() {
 
   const handleDeleteMilestone = async (e, milestoneId) => {
     e.stopPropagation();
-    if (!window.confirm('Xóa cột mốc này?')) return;
+    
+    // Optimistic UI update
+    const updatedSelectedGoal = {
+      ...selectedGoal,
+      milestones: selectedGoal.milestones.filter(m => m.id !== milestoneId)
+    };
+    setSelectedGoal(updatedSelectedGoal);
+    setGoals(prev => prev.map(g => g.id === updatedSelectedGoal.id ? updatedSelectedGoal : g));
+
     try {
       await goalService.deleteMilestone(milestoneId);
+      // Sync with server state just in case
       const resp = await goalService.getGoalById(selectedGoal.id);
-      const updatedGoal = resp.data.data;
-      setSelectedGoal(updatedGoal);
-      setGoals(goals.map(g => g.id === updatedGoal.id ? updatedGoal : g));
+      const serverGoal = resp.data.data;
+      setSelectedGoal(serverGoal);
+      setGoals(prev => prev.map(g => g.id === serverGoal.id ? serverGoal : g));
     } catch (error) {
       console.error('Error deleting milestone:', error);
+      // Revert if error
+      fetchGoals(page, false, true);
     }
   };
 
   const stats = {
-    total: goals.length,
-    completed: goals.filter(g => g.progress === 100).length,
-    successRate: goals.length > 0 ? Math.round((goals.filter(g => g.progress === 100).length / goals.length) * 100) : 0
+    total: totalGoalsCount,
+    completed: completedGoalsCount,
+    successRate: totalGoalsCount > 0 ? Math.round((completedGoalsCount / totalGoalsCount) * 100) : 0
   };
 
   const getCategoryTheme = (title) => {
@@ -279,7 +344,7 @@ function GoalsPage() {
                         </div>
                         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
                           <div className="flex items-center gap-4 text-slate-500">
-                            <div className="flex items-center gap-1.5"><span className="material-icons-round text-sm">calendar_today</span> {new Date(goal.targetDate).toLocaleDateString('vi-VN')}</div>
+                            <div className="flex items-center gap-1.5"><span className="material-icons-round text-sm">calendar_today</span> {formatDateStrict(goal.targetDate)}</div>
                             <div className="flex items-center gap-1.5"><span className="material-icons-round text-sm">checklist</span> {goal.milestones?.filter(m => m.isCompleted).length}/{goal.milestones?.length} CỘT MỐC</div>
                           </div>
                           {calculateDaysLeft(goal.targetDate) > 0 ? (
@@ -301,6 +366,56 @@ function GoalsPage() {
               );
             })}
             {goals.length === 0 && <div className="text-center py-20 glass-panel rounded-3xl text-slate-500 font-medium">Bạn chưa đề ra mục tiêu nào. Hãy bắt đầu ngay!</div>}
+            
+            {totalPages > 0 && (
+              <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-3xl bg-white/40 dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 order-2 sm:order-1">
+                  Trang {page + 1} / {totalPages}
+                </span>
+                <div className="flex items-center gap-1 order-1 sm:order-2">
+                  <button 
+                    disabled={page === 0}
+                    onClick={() => fetchGoals(page - 1)}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                    title="Trang trước"
+                  >
+                    <span className="material-icons-round text-sm">chevron_left</span>
+                  </button>
+                  
+                  <div className="flex items-center gap-1">
+                    {[...Array(totalPages)].map((_, i) => {
+                      if (i === 0 || i === totalPages - 1 || (i >= page - 1 && i <= page + 1)) {
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => fetchGoals(i)}
+                            className={`w-9 h-9 flex items-center justify-center rounded-xl text-[10px] font-black transition-all border ${
+                              page === i 
+                                ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30' 
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 text-slate-500 hover:text-primary'
+                            }`}
+                          >
+                            {i + 1}
+                          </button>
+                        );
+                      } else if ((i === 1 && page > 2) || (i === totalPages - 2 && page < totalPages - 3)) {
+                        return <span key={i} className="text-slate-400 px-1 font-bold">...</span>;
+                      }
+                      return null;
+                    })}
+                  </div>
+
+                  <button 
+                    disabled={page >= totalPages - 1}
+                    onClick={() => fetchGoals(page + 1)}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                    title="Trang tiếp"
+                  >
+                    <span className="material-icons-round text-sm">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -420,6 +535,14 @@ function GoalsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={executeDeleteGoal}
+        title="Xóa mục tiêu"
+        message="Bạn có chắc chắn muốn xóa mục tiêu này? Tất cả các cột mốc liên quan cũng sẽ bị xóa."
+      />
 
       <style>{`
         .animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }

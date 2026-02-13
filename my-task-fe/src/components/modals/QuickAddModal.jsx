@@ -49,8 +49,8 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
 
   const fetchProjects = async () => {
     try {
-      const response = await projectService.getProjects();
-      const projectData = response.data.data || [];
+      const response = await projectService.getProjects('ALL', 0, 100); // Fetch more for dropdown
+      const projectData = response.data.data.content || [];
       setProjects(projectData);
       if (projectData.length > 0) {
         setFormData(prev => ({ ...prev, projectId: projectData[0].id }));
@@ -99,7 +99,7 @@ function QuickAddModal({ isOpen, onClose, onRefresh }) {
           targetDate: formData.targetDate,
         });
       }
-      onRefresh();
+      onRefresh(true);
       onClose();
       setFormData({
          title: '',

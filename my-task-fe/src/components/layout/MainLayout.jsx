@@ -1,11 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import AIChat from '../ai/AIChat';
+import aiService from '../../services/aiService';
 import { LayoutProvider } from '../../context/LayoutContext';
 
 function MainLayoutContent() {
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchInsights = async () => {
+      try {
+        const response = await aiService.getInsights();
+        if (response && response.reply) {
+            toast(response.reply, {
+                icon: '🤖',
+                duration: 6000,
+                style: {
+                  borderRadius: '10px',
+                  background: '#333',
+                  color: '#fff',
+                },
+            });
+        }
+      } catch (error) {
+        console.error("Failed to fetch insights", error);
+      }
+    };
+    fetchInsights();
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark">

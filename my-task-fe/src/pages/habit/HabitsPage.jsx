@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import habitService from '../../services/habitService';
 import Header from '../../components/layout/Header';
 import { useLayout } from '../../context/LayoutContext';
+import { formatDateStrict } from '../../utils/dateUtils';
 
 function HabitsPage() {
   const { toggleSidebar } = useLayout();
@@ -26,16 +27,33 @@ function HabitsPage() {
     targetPerDay: 1,
     reminderTime: '08:00'
   });
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   useEffect(() => {
-    fetchHabits();
+    fetchHabits(0, false);
   }, [selectedDay]);
 
-  const fetchHabits = async () => {
-    setLoading(true);
+  const fetchHabits = async (pageNum = 0, append = false, silent = false) => {
+    if (pageNum === 0 && !silent) setLoading(true);
+    else if (pageNum !== 0 && !silent) setIsFetchingMore(true);
+    
     try {
-      const response = await habitService.getAllHabits(selectedDay);
-      setHabits(response.data.data || []);
+      const response = await habitService.getAllHabits(selectedDay, pageNum);
+      const pageData = response.data.data;
+      const habitsData = pageData.content || [];
+      
+      if (append) {
+        setHabits(prev => [...prev, ...habitsData]);
+      } else {
+        setHabits(habitsData);
+      }
+      
+      setHasMore(!pageData.last);
+      setPage(pageData.pageNumber);
+      setTotalPages(pageData.totalPages);
       
       const end = getLocalDateString();
       const startDateObj = new Date();
@@ -48,8 +66,10 @@ function HabitsPage() {
       console.error('Error fetching habits:', error);
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
   };
+
 
   const handleCreateHabit = async (e) => {
     e.preventDefault();
@@ -70,7 +90,7 @@ function HabitsPage() {
         targetPerDay: 1,
         reminderTime: '08:00'
       });
-      fetchHabits();
+      fetchHabits(page, false, true);
     } catch (error) {
       console.error('Error saving habit:', error);
       alert('Có lỗi xảy ra khi lưu thói quen.');
@@ -92,22 +112,40 @@ function HabitsPage() {
   };
 
   const handleCheckIn = async (habitId) => {
+    // Optimistic update
+    setHabits(prev => prev.map(h => {
+      if (h.id === habitId) {
+        const isNowCompleted = (h.completedCountToday + 1) >= h.targetPerDay;
+        return { 
+          ...h, 
+          completedCountToday: h.completedCountToday + 1,
+          isCompletedToday: isNowCompleted
+        };
+      }
+      return h;
+    }));
+
     try {
       await habitService.checkIn(habitId);
-      fetchHabits();
+      // Silently refresh to sync with server
+      fetchHabits(page, false, true);
     } catch (error) {
       console.error('Error checking in habit:', error);
+      // Revert on error
+      fetchHabits(page, false, true);
     }
   };
 
   const handleDeleteHabit = async (habitId) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa thói quen này?')) {
-      try {
-        await habitService.deleteHabit(habitId);
-        fetchHabits();
-      } catch (error) {
-        console.error('Error deleting habit:', error);
-      }
+    // Optimistic Update
+    setHabits(prev => prev.filter(h => h.id !== habitId));
+
+    try {
+      await habitService.deleteHabit(habitId);
+      fetchHabits(page, false, true);
+    } catch (error) {
+      console.error('Error deleting habit:', error);
+      fetchHabits(page, false, true);
     }
   };
 
@@ -204,7 +242,7 @@ function HabitsPage() {
         <div className="lg:col-span-2 flex flex-col h-full overflow-hidden">
           <div className="flex justify-between items-end mb-6">
             <h3 className="text-xl font-bold text-slate-800 dark:text-white">
-              {selectedDay === getLocalDateString() ? 'Thói quen hôm nay' : `Thói quen ngày ${new Date(selectedDay).toLocaleDateString('vi-VN')}`}
+              {selectedDay === getLocalDateString() ? 'Thói quen hôm nay' : `Thói quen ngày ${formatDateStrict(selectedDay)}`}
             </h3>
             <button 
               onClick={() => setShowModal(true)}
@@ -284,6 +322,56 @@ function HabitsPage() {
               );
             })}
             {habits.length === 0 && <div className="col-span-2 text-center p-12 glass-panel rounded-3xl text-slate-500">Bạn chưa có thói quen nào.</div>}
+            
+            {totalPages > 0 && (
+              <div className="col-span-full mt-auto pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 order-2 sm:order-1">
+                  Trang {page + 1} / {totalPages}
+                </p>
+                <div className="flex items-center gap-1 order-1 sm:order-2">
+                  <button 
+                    disabled={page === 0}
+                    onClick={() => fetchHabits(page - 1)}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                    title="Trang trước"
+                  >
+                    <span className="material-icons-round text-sm">chevron_left</span>
+                  </button>
+                  
+                  <div className="flex items-center gap-1">
+                    {[...Array(totalPages)].map((_, i) => {
+                      if (i === 0 || i === totalPages - 1 || (i >= page - 1 && i <= page + 1)) {
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => fetchHabits(i)}
+                            className={`w-9 h-9 flex items-center justify-center rounded-xl text-[10px] font-black transition-all border ${
+                              page === i 
+                                ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30' 
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 text-slate-500 hover:text-primary'
+                            }`}
+                          >
+                            {i + 1}
+                          </button>
+                        );
+                      } else if ((i === 1 && page > 2) || (i === totalPages - 2 && page < totalPages - 3)) {
+                        return <span key={i} className="text-slate-400 px-1 font-bold">...</span>;
+                      }
+                      return null;
+                    })}
+                  </div>
+
+                  <button 
+                    disabled={page >= totalPages - 1}
+                    onClick={() => fetchHabits(page + 1)}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                    title="Trang tiếp"
+                  >
+                    <span className="material-icons-round text-sm">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -335,7 +423,7 @@ function HabitsPage() {
                     <div 
                       key={i} 
                       className={`aspect-square rounded-[4px] ${colors[intensity]} transition-all hover:scale-110 cursor-pointer`} 
-                      title={`${new Date(dateStr).toLocaleDateString('vi-VN')}: ${dayLogs.length} lần check-in`}
+                      title={`${formatDateStrict(dateStr)}: ${dayLogs.length} lần check-in`}
                     ></div>
                   );
                 })}
@@ -432,6 +520,7 @@ function HabitsPage() {
         <span className="material-icons-round text-2xl group-hover:rotate-90 transition-transform">add</span>
       </button>
 
+      
       <style>{`
         .animate-scale-in { animation: scale-in 0.3s ease-out forwards; }
         @keyframes scale-in { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }

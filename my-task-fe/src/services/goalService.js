@@ -1,8 +1,8 @@
 import apiClient from './apiClient';
 
 const goalService = {
-  getAllGoals: () => {
-    return apiClient.get('/goals');
+  getAllGoals: (page = 0, size = 10) => {
+    return apiClient.get(`/goals?page=${page}&size=${size}`);
   },
   getGoalById: (id) => {
     return apiClient.get(`/goals/${id}`);

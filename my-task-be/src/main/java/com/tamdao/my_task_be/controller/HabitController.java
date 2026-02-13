@@ -3,6 +3,7 @@ package com.tamdao.my_task_be.controller;
 import com.tamdao.my_task_be.dto.request.HabitRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
 import com.tamdao.my_task_be.dto.response.HabitResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.entity.HabitLog;
 import com.tamdao.my_task_be.service.HabitService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,9 +30,11 @@ public class HabitController {
     
     @GetMapping
     @Operation(summary = "Lấy tất cả Habits của user (có thể lọc theo ngày)")
-    public ResponseEntity<ApiResponse<List<HabitResponse>>> getAllHabits(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        List<HabitResponse> habits = habitService.getAllHabits(date != null ? date : LocalDate.now());
+    public ResponseEntity<ApiResponse<PageResponse<HabitResponse>>> getAllHabits(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<HabitResponse> habits = habitService.getAllHabits(date != null ? date : LocalDate.now(), page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách habit thành công", habits));
     }
     

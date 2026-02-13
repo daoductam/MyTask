@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.controller;
 
 import com.tamdao.my_task_be.dto.request.TaskRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.TaskResponse;
 import com.tamdao.my_task_be.entity.Task;
 import com.tamdao.my_task_be.service.TaskService;
@@ -25,11 +26,24 @@ import java.util.Map;
 public class TaskController {
     
     private final TaskService taskService;
+
+    @GetMapping
+    @Operation(summary = "Lấy tất cả Task của user (phân trang)")
+    public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> getAllTasks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Task.TaskStatus status) {
+        PageResponse<TaskResponse> tasks = taskService.getAllTasks(page, size, status);
+        return ResponseEntity.ok(ApiResponse.success("Lấy tất cả task thành công", tasks));
+    }
     
     @GetMapping("/project/{projectId}")
     @Operation(summary = "Lấy tất cả Task theo Project ID")
-    public ResponseEntity<ApiResponse<List<TaskResponse>>> getTasksByProject(@PathVariable Long projectId) {
-        List<TaskResponse> tasks = taskService.getTasksByProject(projectId);
+    public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> getTasksByProject(
+            @PathVariable Long projectId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageResponse<TaskResponse> tasks = taskService.getTasksByProject(projectId, page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách task thành công", tasks));
     }
     

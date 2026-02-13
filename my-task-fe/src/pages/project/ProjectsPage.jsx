@@ -23,31 +23,50 @@ function ProjectsPage() {
     icon: 'folder',
     color: 'from-purple-500 to-indigo-500'
   });
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   useEffect(() => {
-    fetchProjects();
+    fetchProjects(0, false);
   }, [filter]);
 
   useEffect(() => {
     fetchWorkspaces();
   }, []); // Fetch workspaces only once on component mount
 
-  const fetchProjects = async () => {
-    setLoading(true);
+  const fetchProjects = async (pageNum = 0, append = false) => {
+    if (pageNum === 0) setLoading(true);
+    else setIsFetchingMore(true);
+    
     try {
-      const response = await projectService.getProjects(filter);
-      setProjects(response.data.data || []);
+      const response = await projectService.getProjects(filter, pageNum);
+      const pageData = response.data.data;
+      const projectsData = pageData.content || [];
+      
+      if (append) {
+        setProjects(prev => [...prev, ...projectsData]);
+      } else {
+        setProjects(projectsData);
+      }
+      
+      setHasMore(!pageData.last);
+      setPage(pageData.pageNumber);
+      setTotalPages(pageData.totalPages);
     } catch (error) {
       console.error('Error fetching projects:', error);
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
   };
 
+
   const fetchWorkspaces = async () => {
     try {
-      const resp = await workspaceService.getAllWorkspaces();
-      const wsData = resp.data.data || [];
+      const resp = await workspaceService.getAllWorkspaces(0, 100); // Fetch up to 100 for dropdown
+      const wsData = resp.data.data.content || [];
       setWorkspaces(wsData);
       if (wsData.length > 0 && !newProject.workspaceId) {
         setNewProject(prev => ({ ...prev, workspaceId: wsData[0].id }));
@@ -77,7 +96,7 @@ function ProjectsPage() {
         icon: 'folder',
         color: 'from-purple-500 to-indigo-500'
       });
-      fetchProjects();
+      fetchProjects(page);
     } catch (error) {
       console.error('Error saving project:', error);
     }
@@ -85,13 +104,14 @@ function ProjectsPage() {
 
   const handleDeleteProject = async (e, projectId) => {
     e.stopPropagation();
-    if (window.confirm('Xóa dự án này sẽ xóa toàn bộ công việc bên trong. Tiếp tục?')) {
-      try {
-        await projectService.deleteProject(projectId);
-        fetchProjects();
-      } catch (error) {
-        console.error('Error deleting project:', error);
-      }
+    try {
+      // Optimistic Update
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      await projectService.deleteProject(projectId);
+      fetchProjects(page);
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      fetchProjects(page);
     }
   };
 
@@ -100,7 +120,7 @@ function ProjectsPage() {
     try {
       const newStatus = project.status === 'ARCHIVED' ? 'ACTIVE' : 'ARCHIVED';
       await projectService.updateProject(project.id, { ...project, status: newStatus });
-      fetchProjects();
+      fetchProjects(page);
     } catch (error) {
       console.error('Error toggling archive:', error);
     }
@@ -267,6 +287,56 @@ function ProjectsPage() {
               </div>
             ));
           })()}
+        </div>
+      )}
+
+      {totalPages > 0 && (
+        <div className="mt-8 mb-12 flex flex-col sm:flex-row items-center justify-between gap-4 p-6 glass-panel rounded-3xl border border-slate-200 dark:border-white/5 bg-white/50 dark:bg-slate-800/20">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 order-2 sm:order-1">
+            Trang {page + 1} / {totalPages}
+          </p>
+          <div className="flex items-center gap-1.5 order-1 sm:order-2">
+            <button 
+              disabled={page === 0}
+              onClick={() => fetchProjects(page - 1)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:border-primary hover:text-primary shadow-sm"
+              title="Trang trước"
+            >
+              <span className="material-icons-round">chevron_left</span>
+            </button>
+            
+            <div className="flex items-center gap-1.5">
+              {[...Array(totalPages)].map((_, i) => {
+                if (i === 0 || i === totalPages - 1 || (i >= page - 1 && i <= page + 1)) {
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => fetchProjects(i)}
+                      className={`w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black transition-all border ${
+                        page === i 
+                          ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30' 
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 text-slate-500 hover:border-primary hover:text-primary'
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                  );
+                } else if ((i === 1 && page > 2) || (i === totalPages - 2 && page < totalPages - 3)) {
+                  return <span key={i} className="text-slate-400 px-1 font-bold">...</span>;
+                }
+                return null;
+              })}
+            </div>
+
+            <button 
+              disabled={page >= totalPages - 1}
+              onClick={() => fetchProjects(page + 1)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:border-primary hover:text-primary shadow-sm"
+              title="Trang tiếp"
+            >
+              <span className="material-icons-round">chevron_right</span>
+            </button>
+          </div>
         </div>
       )}
 

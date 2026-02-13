@@ -1,8 +1,8 @@
 import apiClient from './apiClient';
 
 const workspaceService = {
-  getAllWorkspaces: () => {
-    return apiClient.get('/workspaces');
+  getAllWorkspaces: (page = 0, size = 10) => {
+    return apiClient.get(`/workspaces?page=${page}&size=${size}`);
   },
   getWorkspaceById: (id) => {
     return apiClient.get(`/workspaces/${id}`);

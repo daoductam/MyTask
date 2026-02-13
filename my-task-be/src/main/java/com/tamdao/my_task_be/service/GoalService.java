@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.GoalRequest;
 import com.tamdao.my_task_be.dto.response.GoalResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.entity.Goal;
 import com.tamdao.my_task_be.entity.Milestone;
 import com.tamdao.my_task_be.entity.User;
@@ -11,6 +12,9 @@ import com.tamdao.my_task_be.repository.GoalRepository;
 import com.tamdao.my_task_be.repository.MilestoneRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,11 +37,23 @@ public class GoalService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy người dùng"));
     }
     
-    public List<GoalResponse> getAllGoals() {
+    public PageResponse<GoalResponse> getAllGoals(int page, int size) {
         User user = getCurrentUser();
-        return goalRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Goal> goalPage = goalRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
+        
+        List<GoalResponse> content = goalPage.getContent().stream()
                 .map(GoalResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<GoalResponse>builder()
+                .content(content)
+                .pageNumber(goalPage.getNumber())
+                .pageSize(goalPage.getSize())
+                .totalElements(goalPage.getTotalElements())
+                .totalPages(goalPage.getTotalPages())
+                .last(goalPage.isLast())
+                .build();
     }
     
     public GoalResponse getGoalById(Long id) {

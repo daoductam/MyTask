@@ -1,6 +1,7 @@
 package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.TaskRequest;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.TaskResponse;
 import com.tamdao.my_task_be.entity.Label;
 import com.tamdao.my_task_be.entity.Project;
@@ -13,9 +14,14 @@ import com.tamdao.my_task_be.repository.ProjectRepository;
 import com.tamdao.my_task_be.repository.TaskRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 import java.util.HashSet;
 import java.util.List;
@@ -38,7 +44,7 @@ public class TaskService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy người dùng"));
     }
     
-    public List<TaskResponse> getTasksByProject(Long projectId) {
+    public PageResponse<TaskResponse> getTasksByProject(Long projectId, int page, int size) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", projectId));
         
@@ -47,23 +53,70 @@ public class TaskService {
             throw new BadRequestException("Bạn không có quyền truy cập project này");
         }
         
-        return taskRepository.findByProjectOrderByPositionAsc(project).stream()
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Task> taskPage = taskRepository.findByProjectIdOrderByPositionAsc(projectId, pageable);
+        
+        List<TaskResponse> content = taskPage.getContent().stream()
                 .map(TaskResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<TaskResponse>builder()
+                .content(content)
+                .pageNumber(taskPage.getNumber())
+                .pageSize(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements())
+                .totalPages(taskPage.getTotalPages())
+                .last(taskPage.isLast())
+                .build();
     }
     
     public Map<String, List<TaskResponse>> getTasksByProjectGroupedByStatus(Long projectId) {
-        List<TaskResponse> tasks = getTasksByProject(projectId);
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project", projectId));
+        
+        User user = getCurrentUser();
+        if (!project.getCreatedBy().getId().equals(user.getId())) {
+            throw new BadRequestException("Bạn không có quyền truy cập project này");
+        }
+        
+        List<Task> tasks = taskRepository.findByProjectOrderByPositionAsc(project);
         return tasks.stream()
+                .map(TaskResponse::fromEntity)
                 .collect(Collectors.groupingBy(TaskResponse::getStatus));
     }
 
     public Map<String, List<TaskResponse>> getAllTasksGroupedByStatus() {
         User user = getCurrentUser();
-        List<Task> tasks = taskRepository.findAllByUserId(user.getId());
+        // Kanban still uses all tasks for now, or we can use unpaged Pageable
+        List<Task> tasks = taskRepository.findAllByUserId(user.getId(), Pageable.unpaged()).getContent();
         return tasks.stream()
                 .map(TaskResponse::fromEntity)
                 .collect(Collectors.groupingBy(TaskResponse::getStatus));
+    }
+
+    public PageResponse<TaskResponse> getAllTasks(int page, int size, Task.TaskStatus status) {
+        User user = getCurrentUser();
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Task> taskPage;
+        
+        if (status != null) {
+            taskPage = taskRepository.findAllByUserIdAndStatus(user.getId(), status, pageable);
+        } else {
+            taskPage = taskRepository.findAllByUserId(user.getId(), pageable);
+        }
+
+        List<TaskResponse> content = taskPage.getContent().stream()
+                .map(TaskResponse::fromEntity)
+                .collect(Collectors.toList());
+
+        return PageResponse.<TaskResponse>builder()
+                .content(content)
+                .pageNumber(taskPage.getNumber())
+                .pageSize(taskPage.getSize())
+                .totalElements(taskPage.getTotalElements())
+                .totalPages(taskPage.getTotalPages())
+                .last(taskPage.isLast())
+                .build();
     }
     
     public TaskResponse getTaskById(Long id) {
@@ -178,6 +231,12 @@ public class TaskService {
         }
         
         task.setStatus(newStatus);
+        if (newStatus == Task.TaskStatus.DONE) {
+            task.setCompletedAt(LocalDateTime.now());
+        } else {
+            task.setCompletedAt(null);
+        }
+        
         if (newPosition != null) {
             task.setPosition(newPosition);
         }

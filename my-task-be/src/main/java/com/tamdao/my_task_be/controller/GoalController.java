@@ -3,6 +3,7 @@ package com.tamdao.my_task_be.controller;
 import com.tamdao.my_task_be.dto.request.GoalRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
 import com.tamdao.my_task_be.dto.response.GoalResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.service.GoalService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -13,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -27,8 +27,10 @@ public class GoalController {
     
     @GetMapping
     @Operation(summary = "Lấy tất cả Mục tiêu của user")
-    public ResponseEntity<ApiResponse<List<GoalResponse>>> getAllGoals() {
-        List<GoalResponse> goals = goalService.getAllGoals();
+    public ResponseEntity<ApiResponse<PageResponse<GoalResponse>>> getAllGoals(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<GoalResponse> goals = goalService.getAllGoals(page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách mục tiêu thành công", goals));
     }
     

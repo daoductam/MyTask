@@ -36,7 +36,6 @@ public class DashboardService {
     }
     
     public DashboardResponse getDashboardOverview() {
-        // ... (existing code unchanged in view, but I'll replace it properly)
         User user = getCurrentUser();
         Long userId = user.getId();
         LocalDate today = LocalDate.now();
@@ -44,12 +43,12 @@ public class DashboardService {
         LocalDate endOfMonth = today.withDayOfMonth(today.lengthOfMonth());
         
         // 1. Task Stats
-        long tasksDueToday = taskRepository.countByAssigneeIdAndDueDate(userId, today);
+        long tasksRemainingToday = taskRepository.countByAssigneeIdAndDueDate(userId, today);
+        long tasksDoneToday = taskRepository.countByAssigneeIdAndCompletedAtBetween(userId, today.atStartOfDay(), today.atTime(23, 59, 59));
         long tasksPending = taskRepository.countActiveTasksByUser(userId);
-        long tasksCompleted = taskRepository.countByAssigneeIdAndStatus(userId, Task.TaskStatus.DONE);
         
         List<TaskResponse> recentTasks = taskRepository.findByAssigneeIdOrderByDueDateAsc(userId).stream()
-                .filter(t -> t.getStatus() != Task.TaskStatus.DONE)
+                .filter(t -> t.getStatus() == Task.TaskStatus.IN_PROGRESS)
                 .limit(5)
                 .map(TaskResponse::fromEntity)
                 .collect(Collectors.toList());
@@ -76,8 +75,8 @@ public class DashboardService {
         
         // 5. AI Suggestions
         List<String> suggestions = new ArrayList<>();
-        if (tasksDueToday > 0) {
-            suggestions.add("Bạn có " + tasksDueToday + " công việc cần hoàn thành hôm nay. Hãy ưu tiên chúng!");
+        if (tasksRemainingToday > 0) {
+            suggestions.add("Bạn có " + tasksRemainingToday + " công việc cần hoàn thành hôm nay. Hãy ưu tiên chúng!");
         }
         if (tasksPending > 5) {
             suggestions.add("Khối lượng công việc đang tích tụ. Hãy xem xét sử dụng Pomodoro để tập trung hơn.");
@@ -94,9 +93,9 @@ public class DashboardService {
         int currentScore = trend.get(6);
         
         return DashboardResponse.builder()
-                .tasksDueToday(tasksDueToday)
+                .tasksRemainingToday(tasksRemainingToday)
+                .tasksDoneToday(tasksDoneToday)
                 .tasksPending(tasksPending)
-                .tasksCompleted(tasksCompleted)
                 .habitsCompletedToday(habitsCompletedToday)
                 .totalHabits(totalHabits)
                 .maxStreak(maxStreak)
@@ -111,18 +110,13 @@ public class DashboardService {
     }
 
     private int calculateDailyScore(Long userId, LocalDate date) {
-        // Simple formula: Task (10pts), Habit (5pts), Pomodoro (1pt per 5min)
-        // Adjust relative to targets or fixed weights
-        long tasks = taskRepository.countByAssigneeIdAndDueDate(userId, date); // Actually should be completed count on that date
-        // Note: Repository doesn't have completedDate for tasks, so we estimate using dueDate for simplicity or assume tasks completed today.
-        // For real app, Task should have completedAt. 
+        // Simple formula: Task (15pts), Habit (10pts), Pomodoro (1pt per 3min)
+        long tasks = taskRepository.countByAssigneeIdAndCompletedAtBetween(userId, date.atStartOfDay(), date.atTime(23, 59, 59));
         
         long habits = habitLogRepository.findByUserIdAndCompletedDate(userId, date).size();
         Integer focusMinutes = pomodoroSessionRepository.sumCompletedDurationByUserSince(userId, date.atStartOfDay());
         if (focusMinutes == null) focusMinutes = 0;
         
-        // Let's use a dynamic base of 100 for "perfect day"
-        // 3 tasks (30), 5 habits (25), 2h focus (120/5 = 24) = 79. Scale it.
         double score = (tasks * 15) + (habits * 10) + (focusMinutes / 3.0);
         return (int) Math.min(score, 100);
     }

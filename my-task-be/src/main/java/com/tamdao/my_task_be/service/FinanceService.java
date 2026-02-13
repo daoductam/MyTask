@@ -1,6 +1,7 @@
 package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.TransactionRequest;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.TransactionResponse;
 import com.tamdao.my_task_be.entity.FinanceCategory;
 import com.tamdao.my_task_be.entity.Transaction;
@@ -11,6 +12,9 @@ import com.tamdao.my_task_be.repository.FinanceCategoryRepository;
 import com.tamdao.my_task_be.repository.TransactionRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,20 +42,31 @@ public class FinanceService {
     }
     
     // Transactions
-    public List<TransactionResponse> getTransactions(LocalDate startDate, LocalDate endDate) {
+    public PageResponse<TransactionResponse> getTransactions(LocalDate startDate, LocalDate endDate, int page, int size) {
         User user = getCurrentUser();
-        return transactionRepository.findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
-                user.getId(), startDate, endDate)
-                .stream()
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Transaction> txPage = transactionRepository.findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
+                user.getId(), startDate, endDate, pageable);
+                
+        List<TransactionResponse> content = txPage.getContent().stream()
                 .map(TransactionResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<TransactionResponse>builder()
+                .content(content)
+                .pageNumber(txPage.getNumber())
+                .pageSize(txPage.getSize())
+                .totalElements(txPage.getTotalElements())
+                .totalPages(txPage.getTotalPages())
+                .last(txPage.isLast())
+                .build();
     }
     
-    public List<TransactionResponse> getTransactionsForMonth(int year, int month) {
+    public PageResponse<TransactionResponse> getTransactionsForMonth(int year, int month, int page, int size) {
         YearMonth yearMonth = YearMonth.of(year, month);
         LocalDate start = yearMonth.atDay(1);
         LocalDate end = yearMonth.atEndOfMonth();
-        return getTransactions(start, end);
+        return getTransactions(start, end, page, size);
     }
     
     public TransactionResponse getTransactionById(Long id) {
@@ -140,7 +155,7 @@ public class FinanceService {
         LocalDate end = yearMonth.atEndOfMonth();
         
         List<Transaction> currentTransactions = transactionRepository
-                .findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(user.getId(), start, end);
+                .findByUserIdAndTransactionDateBetween(user.getId(), start, end);
         
         BigDecimal income = currentTransactions.stream()
                 .filter(t -> t.getType() == Transaction.TransactionType.INCOME)
@@ -158,7 +173,7 @@ public class FinanceService {
         LocalDate prevEnd = prevYearMonth.atEndOfMonth();
         
         List<Transaction> prevTransactions = transactionRepository
-                .findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(user.getId(), prevStart, prevEnd);
+                .findByUserIdAndTransactionDateBetween(user.getId(), prevStart, prevEnd);
         
         BigDecimal prevIncome = prevTransactions.stream()
                 .filter(t -> t.getType() == Transaction.TransactionType.INCOME)
@@ -191,6 +206,66 @@ public class FinanceService {
         summary.put("transactionCount", currentTransactions.size());
         
         return summary;
+    }
+    
+    public PageResponse<TransactionResponse> getTransactionsByDateRange(String startDateStr, String endDateStr, int page, int size) {
+        LocalDate startDate = LocalDate.parse(startDateStr);
+        LocalDate endDate = LocalDate.parse(endDateStr);
+        return getTransactions(startDate, endDate, page, size);
+    }
+    
+    public Map<String, Object> getCategoryStatistics(String startDateStr, String endDateStr) {
+        User user = getCurrentUser();
+        LocalDate startDate = LocalDate.parse(startDateStr);
+        LocalDate endDate = LocalDate.parse(endDateStr);
+        
+        List<Transaction> transactions = transactionRepository
+                .findByUserIdAndTransactionDateBetween(user.getId(), startDate, endDate);
+        
+        // Group by category for expenses
+        Map<String, BigDecimal> expenseByCategory = new HashMap<>();
+        Map<String, BigDecimal> incomeByCategory = new HashMap<>();
+        
+        for (Transaction tx : transactions) {
+            String categoryName = tx.getCategory().getName();
+            if (tx.getType() == Transaction.TransactionType.EXPENSE) {
+                expenseByCategory.merge(categoryName, tx.getAmount(), BigDecimal::add);
+            } else {
+                incomeByCategory.merge(categoryName, tx.getAmount(), BigDecimal::add);
+            }
+        }
+        
+        // Convert to list of maps for easier frontend consumption
+        List<Map<String, Object>> expenseData = expenseByCategory.entrySet().stream()
+                .map(entry -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("name", entry.getKey());
+                    item.put("value", entry.getValue());
+                    return item;
+                })
+                .collect(Collectors.toList());
+                
+        List<Map<String, Object>> incomeData = incomeByCategory.entrySet().stream()
+                .map(entry -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("name", entry.getKey());
+                    item.put("value", entry.getValue());
+                    return item;
+                })
+                .collect(Collectors.toList());
+        
+        BigDecimal totalExpense = expenseByCategory.values().stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalIncome = incomeByCategory.values().stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("expenseByCategory", expenseData);
+        result.put("incomeByCategory", incomeData);
+        result.put("totalExpense", totalExpense);
+        result.put("totalIncome", totalIncome);
+        
+        return result;
     }
     
     // Categories

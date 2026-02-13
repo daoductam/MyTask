@@ -1,6 +1,7 @@
 package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.ProjectRequest;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.ProjectResponse;
 import com.tamdao.my_task_be.entity.Project;
 import com.tamdao.my_task_be.entity.User;
@@ -12,6 +13,9 @@ import com.tamdao.my_task_be.repository.TaskRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import com.tamdao.my_task_be.repository.WorkspaceRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +39,7 @@ public class ProjectService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy người dùng"));
     }
     
-    public List<ProjectResponse> getProjectsByWorkspace(Long workspaceId) {
+    public PageResponse<ProjectResponse> getProjectsByWorkspace(Long workspaceId, int page, int size) {
         User user = getCurrentUser();
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace", workspaceId));
@@ -44,21 +48,47 @@ public class ProjectService {
             throw new BadRequestException("Bạn không có quyền truy cập workspace này");
         }
         
-        return projectRepository.findByWorkspaceOrderByCreatedAtDesc(workspace).stream()
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Project> projectPage = projectRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId, pageable);
+        
+        List<ProjectResponse> content = projectPage.getContent().stream()
                 .map(ProjectResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<ProjectResponse>builder()
+                .content(content)
+                .pageNumber(projectPage.getNumber())
+                .pageSize(projectPage.getSize())
+                .totalElements(projectPage.getTotalElements())
+                .totalPages(projectPage.getTotalPages())
+                .last(projectPage.isLast())
+                .build();
     }
     
-    public List<ProjectResponse> getAllProjects(Project.ProjectStatus status) {
+    public PageResponse<ProjectResponse> getAllProjects(Project.ProjectStatus status, int page, int size) {
         User user = getCurrentUser();
-        List<Project> projects = projectRepository.findByCreatedByOrderByCreatedAtDesc(user);
+        Pageable pageable = PageRequest.of(page, size);
         
-        // Sync statuses and filter
-        return projects.stream()
+        Page<Project> projectPage;
+        if (status != null) {
+            projectPage = projectRepository.findByCreatedByAndStatusOrderByCreatedAtDesc(user, status, pageable);
+        } else {
+            projectPage = projectRepository.findByCreatedByIdOrderByCreatedAtDesc(user.getId(), pageable);
+        }
+        
+        List<ProjectResponse> content = projectPage.getContent().stream()
                 .peek(this::syncProjectStatus)
-                .filter(p -> status == null || p.getStatus() == status)
                 .map(ProjectResponse::fromEntity)
                 .collect(Collectors.toList());
+                
+        return PageResponse.<ProjectResponse>builder()
+                .content(content)
+                .pageNumber(projectPage.getNumber())
+                .pageSize(projectPage.getSize())
+                .totalElements(projectPage.getTotalElements())
+                .totalPages(projectPage.getTotalPages())
+                .last(projectPage.isLast())
+                .build();
     }
     
     public ProjectResponse getProjectById(Long id) {

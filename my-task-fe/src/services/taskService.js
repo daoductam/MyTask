@@ -1,8 +1,11 @@
 import apiClient from './apiClient';
 
 const taskService = {
-  getTasks: (projectId) => {
-    return apiClient.get(`/tasks/project/${projectId}`);
+  getTasks: (projectId, page = 0, size = 20) => {
+    return apiClient.get(`/tasks/project/${projectId}?page=${page}&size=${size}`);
+  },
+  getAllTasks: (page = 0, size = 20, status = '') => {
+    return apiClient.get(`/tasks?page=${page}&size=${size}${status ? `&status=${status}` : ''}`);
   },
   getKanbanTasks: () => {
     return apiClient.get('/tasks/kanban');

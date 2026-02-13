@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.service;
 
 import com.tamdao.my_task_be.dto.request.HabitRequest;
 import com.tamdao.my_task_be.dto.response.HabitResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.entity.Habit;
 import com.tamdao.my_task_be.entity.HabitLog;
 import com.tamdao.my_task_be.entity.User;
@@ -11,6 +12,9 @@ import com.tamdao.my_task_be.repository.HabitLogRepository;
 import com.tamdao.my_task_be.repository.HabitRepository;
 import com.tamdao.my_task_be.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,10 +38,12 @@ public class HabitService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy người dùng"));
     }
     
-    public List<HabitResponse> getAllHabits(LocalDate date) {
+    public PageResponse<HabitResponse> getAllHabits(LocalDate date, int page, int size) {
         User user = getCurrentUser();
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Habit> habitPage = habitRepository.findByUserIdAndActiveOrderByCreatedAtDesc(user.getId(), true, pageable);
         
-        return habitRepository.findByUserIdAndActiveOrderByCreatedAtDesc(user.getId(), true).stream()
+        List<HabitResponse> content = habitPage.getContent().stream()
                 .map(habit -> {
                     Optional<HabitLog> dateLog = habitLogRepository.findByHabitIdAndCompletedDate(habit.getId(), date);
                     int count = dateLog.map(HabitLog::getCount).orElse(0);
@@ -45,6 +51,15 @@ public class HabitService {
                     return HabitResponse.fromEntity(habit, completed, count);
                 })
                 .collect(Collectors.toList());
+                
+        return PageResponse.<HabitResponse>builder()
+                .content(content)
+                .pageNumber(habitPage.getNumber())
+                .pageSize(habitPage.getSize())
+                .totalElements(habitPage.getTotalElements())
+                .totalPages(habitPage.getTotalPages())
+                .last(habitPage.isLast())
+                .build();
     }
     
     public HabitResponse getHabitById(Long id) {

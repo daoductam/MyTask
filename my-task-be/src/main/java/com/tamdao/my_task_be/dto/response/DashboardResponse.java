@@ -14,9 +14,9 @@ import java.util.List;
 @AllArgsConstructor
 public class DashboardResponse {
     // Tasks
-    private long tasksDueToday;
+    private long tasksRemainingToday;
+    private long tasksDoneToday;
     private long tasksPending;
-    private long tasksCompleted;
     
     // Habits
     private long habitsCompletedToday;

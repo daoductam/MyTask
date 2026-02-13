@@ -5,6 +5,8 @@ import com.tamdao.my_task_be.dto.request.*;
 import com.tamdao.my_task_be.dto.response.*;
 import com.tamdao.my_task_be.entity.*;
 import com.tamdao.my_task_be.repository.*;
+import com.tamdao.my_task_be.entity.Task.TaskStatus;
+import com.tamdao.my_task_be.entity.Task.TaskPriority;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -46,6 +48,8 @@ public class AiActionService {
                     return createProject(payload, user);
                 case "CREATE_GOAL":
                      return createGoal(payload, user);
+                case "CREATE_PLAN":
+                     return createPlan(payload, user);
                 default:
                     return "Hành động '" + action + "' chưa được hỗ trợ.";
             }
@@ -100,38 +104,34 @@ public class AiActionService {
 
     private String addTransaction(Map<String, Object> payload, User user) {
         TransactionRequest request = objectMapper.convertValue(payload, TransactionRequest.class);
-        
-        if (request.getCategoryId() == null && payload.containsKey("categoryName")) {
-            String catName = (String) payload.get("categoryName");
-            // Find category
-            // Assuming we can fetch categories for user or system ones.
-            // I'll assume we iterate over categories related to user.
-            // financeCategoryRepository likely has findByUserId or CreatedBy.
-            // Let's use a workaround: create a general category if null?
-            // Or try to find one.
-            // Let's assume request fails if categoryId is null.
-            // I will try to find a category simply.
-        }
-        
-        // We really need to look up category ID.
-        // Let's try to fetch all categories for user.
-        // Assuming financeCategoryRepository.findByUser(user) exists.
-        // If not, I will catch exception.
+        String catName = (String) payload.getOrDefault("categoryName", "");
         
         try {
-             List<FinanceCategory> categories = financeCategoryRepository.findAll(); // Should be filtered by tenant/user in real app
+             List<FinanceCategory> categories = financeCategoryRepository.findAll();
+             
+             // 1. Exact/Case-insensitive match
              Optional<FinanceCategory> match = categories.stream()
                 .filter(c -> c.getUser().getId().equals(user.getId()))
-                .filter(c -> c.getName().equalsIgnoreCase((String)payload.getOrDefault("categoryName", "Chi tiêu khác")))
+                .filter(c -> c.getName().equalsIgnoreCase(catName.trim()))
                 .findFirst();
              
+             // 2. Contains match (Fuzzy) if no exact match
+             if (match.isEmpty() && !catName.isBlank()) {
+                 match = categories.stream()
+                    .filter(c -> c.getUser().getId().equals(user.getId()))
+                    .filter(c -> c.getName().toLowerCase().contains(catName.toLowerCase().trim()) || 
+                                catName.toLowerCase().contains(c.getName().toLowerCase()))
+                    .findFirst();
+             }
+
              if (match.isPresent()) {
                  request.setCategoryId(match.get().getId());
+                 request.setType(match.get().getType().name()); // Ensure type matches category
              } else {
-                 // Fallback to first one of matching type?
+                 // Fallback to first one of matching type
                  Optional<FinanceCategory> first = categories.stream()
                     .filter(c -> c.getUser().getId().equals(user.getId()))
-                    .filter(c -> c.getType().name().equalsIgnoreCase(request.getType())) // INCOME / EXPENSE
+                    .filter(c -> c.getType().name().equalsIgnoreCase(request.getType()))
                     .findFirst();
                  first.ifPresent(c -> request.setCategoryId(c.getId()));
              }
@@ -144,7 +144,8 @@ public class AiActionService {
         }
 
         financeService.createTransaction(request);
-        return "Đã thêm giao dịch: " + request.getAmount() + " VND (" + request.getType() + ").";
+        return "Đã thêm giao dịch: **" + request.getAmount() + " VND** vào danh mục **" + 
+               (request.getCategoryId() != null ? "đã chọn" : "mặc định") + "**. (" + request.getType() + ")";
     }
 
     private String createHabit(Map<String, Object> payload, User user) {
@@ -182,5 +183,65 @@ public class AiActionService {
         GoalRequest request = objectMapper.convertValue(payload, GoalRequest.class);
         var response = goalService.createGoal(request);
         return "Đã tạo mục tiêu: **" + response.getTitle() + "**.";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String createPlan(Map<String, Object> payload, User user) {
+        String projectName = (String) payload.getOrDefault("project", payload.get("topic"));
+        String description = (String) payload.getOrDefault("description", "Kế hoạch được tạo bởi AI");
+        List<String> tasks = (List<String>) payload.get("tasks");
+        
+        if (projectName == null || tasks == null || tasks.isEmpty()) {
+            return "Thông tin kế hoạch không hợp lệ.";
+        }
+        
+        // 1. Find or Create Project
+        ProjectResponse project;
+        List<Project> existingProjects = projectRepository.findByCreatedByOrderByCreatedAtDesc(user);
+        Optional<Project> existingMatch = existingProjects.stream()
+                .filter(p -> p.getName().equalsIgnoreCase(projectName))
+                .findFirst();
+
+        if (existingMatch.isPresent()) {
+            project = ProjectResponse.fromEntity(existingMatch.get());
+        } else {
+            ProjectRequest projReq = new ProjectRequest();
+            projReq.setName(projectName);
+            projReq.setDescription(description);
+            projReq.setStatus("ACTIVE");
+
+            // Find workspace (reuse logic)
+            List<Workspace> workspaces = workspaceRepository.findAll();
+            Optional<Workspace> ws = workspaces.stream()
+               .filter(w -> w.getOwner().getId().equals(user.getId()))
+               .findFirst();
+            if (ws.isPresent()) {
+                 projReq.setWorkspaceId(ws.get().getId());
+            } else {
+                 return "Bạn chưa có Workspace để tạo dự án.";
+            }
+            project = projectService.createProject(projReq);
+        }
+        
+        // 2. Create Tasks
+        int count = 0;
+        for (String taskTitle : tasks) {
+            TaskRequest taskReq = new TaskRequest();
+            taskReq.setTitle(taskTitle);
+            taskReq.setProjectId(project.getId());
+            taskReq.setAssigneeId(user.getId());
+            taskReq.setPriority(TaskPriority.MEDIUM);
+            taskReq.setDescription("Tự động tạo từ kế hoạch AI");
+            taskReq.setStatus(TaskStatus.TODO);
+            
+            try {
+                taskService.createTask(taskReq);
+                count++;
+            } catch (Exception e) {
+                // ignore failed tasks
+            }
+        }
+        
+        return "Đã lập kế hoạch **" + projectName + "** và tạo thành công **" + count + "/" + tasks.size() + "** công việc.";
     }
 }

@@ -60,6 +60,9 @@ public class Task {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
     
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+    
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;

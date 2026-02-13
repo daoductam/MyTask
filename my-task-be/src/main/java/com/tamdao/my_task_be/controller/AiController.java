@@ -25,7 +25,7 @@ public class AiController {
     @PostMapping("/chat")
     @Operation(summary = "Chat với AI Assistant")
     public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request) {
-        ChatResponse response = aiService.chat(request.getMessage());
+        ChatResponse response = aiService.chatWithImage(request.getMessage(), request.getImage());
         return ResponseEntity.ok(ApiResponse.success("Phản hồi từ AI", response));
     }
 
@@ -33,5 +33,12 @@ public class AiController {
     @Operation(summary = "Lấy lịch sử chat")
     public ResponseEntity<ApiResponse<List<com.tamdao.my_task_be.entity.AiMessage>>> getHistory() {
         return ResponseEntity.ok(ApiResponse.success("Lấy lịch sử thành công", aiService.getHistory()));
+    }
+
+    @GetMapping("/insights")
+    @Operation(summary = "Lấy thông tin chi tiết từ AI")
+    public ResponseEntity<ApiResponse<ChatResponse>> getInsights() {
+        String insights = aiService.getInsights();
+        return ResponseEntity.ok(ApiResponse.success("Insights", ChatResponse.builder().reply(insights).build()));
     }
 }

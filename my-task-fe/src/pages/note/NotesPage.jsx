@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import noteService from '../../services/noteService';
 import Header from '../../components/layout/Header';
 import { useLayout } from '../../context/LayoutContext';
+import ConfirmModal from '../../components/common/ConfirmModal';
+import { formatDateStrict } from '../../utils/dateUtils';
 
 function NotesPage() {
   const { toggleSidebar } = useLayout();
@@ -14,6 +16,17 @@ function NotesPage() {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    id: null,
+    type: 'note', // 'note' or 'folder'
+    title: '',
+    message: ''
+  });
 
   useEffect(() => {
     fetchFolders();
@@ -29,28 +42,43 @@ function NotesPage() {
     }
   };
 
-  const fetchNotes = async (folderId = null) => {
-    setLoading(true);
+  const fetchNotes = async (folderId = activeFolder, pageNum = 0, append = false, silent = false) => {
+    if (pageNum === 0 && !silent) setLoading(true);
+    else if (pageNum !== 0 && !silent) setIsFetchingMore(true);
+    
     try {
       let response;
       if (folderId && folderId !== 'ALL') {
-        response = await noteService.getNotesByFolder(folderId);
+        response = await noteService.getNotesByFolder(folderId, pageNum);
       } else {
-        response = await noteService.getAllNotes();
+        response = await noteService.getAllNotes(pageNum);
       }
-      const notesData = response.data.data || [];
-      setNotes(notesData);
-      if (notesData.length > 0 && !selectedNote) {
-        setSelectedNote(notesData[0]);
-      } else if (notesData.length === 0) {
-        setSelectedNote(null);
+      
+      const pageData = response.data.data;
+      const notesData = pageData.content || [];
+      
+      if (append) {
+        setNotes(prev => [...prev, ...notesData]);
+      } else {
+        setNotes(notesData);
+        if (notesData.length > 0 && !selectedNote) {
+          setSelectedNote(notesData[0]);
+        } else if (notesData.length === 0) {
+          setSelectedNote(null);
+        }
       }
+      
+      setHasMore(!pageData.last);
+      setPage(pageData.pageNumber);
+      setTotalPages(pageData.totalPages);
     } catch (error) {
       console.error('Error fetching notes:', error);
     } finally {
       setLoading(false);
+      setIsFetchingMore(false);
     }
   };
+
 
   const handleCreateNote = async () => {
     try {
@@ -90,17 +118,43 @@ function NotesPage() {
   };
 
   const handleDeleteNote = async (id) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa ghi chú này?')) {
-      try {
-        await noteService.deleteNote(id);
-        const updatedNotes = notes.filter(n => n.id !== id);
-        setNotes(updatedNotes);
-        if (selectedNote?.id === id) {
-          setSelectedNote(updatedNotes.length > 0 ? updatedNotes[0] : null);
-        }
-      } catch (error) {
-        console.error('Error deleting note:', error);
+    // Optimistic Update
+    const updatedNotes = notes.filter(n => n.id !== id);
+    setNotes(updatedNotes);
+    if (selectedNote?.id === id) {
+      setSelectedNote(updatedNotes.length > 0 ? updatedNotes[0] : null);
+    }
+
+    try {
+      await noteService.deleteNote(id);
+      fetchNotes(activeFolder, page, false, true);
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      fetchNotes(activeFolder, page, false, true);
+    }
+  };
+
+  const handleDeleteFolder = (e, id, name) => {
+    e.stopPropagation();
+    setConfirmModal({
+      isOpen: true,
+      id: id,
+      type: 'folder',
+      title: 'Xóa thư mục và Ghi chú',
+      message: `Bạn có chắc muốn xóa thư mục "${name}"? TOÀN BỘ ghi chú bên trong sẽ bị xóa vĩnh viễn và không thể khôi phục.`
+    });
+  };
+
+  const executeDelete = async () => {
+    if (!confirmModal.id) return;
+    try {
+      if (confirmModal.type === 'folder') {
+        await noteService.deleteFolder(confirmModal.id);
+        fetchFolders();
+        if (activeFolder === confirmModal.id) setActiveFolder('ALL');
       }
+    } catch (error) {
+      console.error(`Error deleting ${confirmModal.type}:`, error);
     }
   };
 
@@ -130,18 +184,6 @@ function NotesPage() {
     }
   };
 
-  const handleDeleteFolder = async (id) => {
-    if (window.confirm('Xóa thư mục sẽ không xóa các ghi chú bên trong. Tiếp tục?')) {
-      try {
-        await noteService.deleteFolder(id);
-        fetchFolders();
-        if (activeFolder === id) setActiveFolder('ALL');
-      } catch (error) {
-        console.error('Error deleting folder:', error);
-      }
-    }
-  };
-
   const filteredNotes = notes.filter(note => 
     note.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     note.content?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -154,7 +196,7 @@ function NotesPage() {
     if (diff < 60) return 'Vừa xong';
     if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
     if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-    return date.toLocaleDateString('vi-VN');
+    return formatDateStrict(dateString);
   };
 
   if (loading && notes.length === 0) {
@@ -205,15 +247,24 @@ function NotesPage() {
             className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${activeFolder === 'ALL' ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/10'}`}
           >Tất cả</button>
           {folders.map(f => (
-            <button 
-              key={f.id} 
-              onClick={() => { setActiveFolder(f.id); fetchNotes(f.id); }}
-              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${activeFolder === f.id ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/10'}`}
-            >{f.name}</button>
+            <div key={f.id} className="relative group/folder shrink-0">
+              <button 
+                onClick={() => { setActiveFolder(f.id); fetchNotes(f.id, 0, false); }}
+                className={`px-4 py-2 pr-8 rounded-xl text-sm font-medium whitespace-nowrap transition-all relative ${activeFolder === f.id ? 'bg-primary text-white shadow-lg' : 'bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/10'}`}
+              >
+                {f.name}
+              </button>
+              <button 
+                onClick={(e) => handleDeleteFolder(e, f.id, f.name)}
+                className={`absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg transition-all opacity-0 group-hover/folder:opacity-100 ${activeFolder === f.id ? 'text-white/70 hover:text-white hover:bg-white/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-500/10'}`}
+              >
+                <span className="material-icons-round text-sm">close</span>
+              </button>
+            </div>
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-3 pr-2 -mr-2 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-2 -mr-2 scrollbar-hide flex flex-col">
           {filteredNotes.map(note => (
             <div 
               key={note.id} 
@@ -237,6 +288,54 @@ function NotesPage() {
             </div>
           ))}
           {filteredNotes.length === 0 && <div className="text-center py-12 text-slate-500 dark:text-slate-600">Trống</div>}
+          
+          {totalPages > 0 && (
+            <div className="py-2 border-t border-slate-200 dark:border-white/5 flex flex-col items-center gap-3">
+              <div className="flex items-center gap-1">
+                <button 
+                  disabled={page === 0}
+                  onClick={() => fetchNotes(activeFolder, page - 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                >
+                  <span className="material-icons-round text-lg">chevron_left</span>
+                </button>
+                
+                <div className="flex items-center gap-1">
+                  {[...Array(totalPages)].map((_, i) => {
+                    if (i === 0 || i === totalPages - 1 || (i >= page - 1 && i <= page + 1)) {
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => fetchNotes(activeFolder, i)}
+                          className={`w-8 h-8 flex items-center justify-center rounded-lg text-[10px] font-black transition-all border ${
+                            page === i 
+                              ? 'bg-primary border-primary text-white shadow-lg' 
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 text-slate-500 hover:text-primary'
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      );
+                    } else if ((i === 1 && page > 2) || (i === totalPages - 2 && page < totalPages - 3)) {
+                      return <span key={i} className="text-slate-400 px-0.5 text-[10px]">...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+
+                <button 
+                  disabled={page >= totalPages - 1}
+                  onClick={() => fetchNotes(activeFolder, page + 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-500 disabled:opacity-40 transition-all hover:text-primary shadow-sm"
+                >
+                  <span className="material-icons-round text-lg">chevron_right</span>
+                </button>
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                {page + 1} / {totalPages}
+              </p>
+            </div>
+          )}
         </div>
 
         <button 
@@ -317,6 +416,14 @@ function NotesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={executeDelete}
+        title={confirmModal.title}
+        message={confirmModal.message}
+      />
 
       <style>{`
         .animate-scale-in { animation: scale-in 0.3s ease-out forwards; }

@@ -1,16 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dashboardService from '../../services/dashboardService';
+import taskService from '../../services/taskService';
 import Header from '../../components/layout/Header';
 import QuickAddModal from '../../components/modals/QuickAddModal';
+import TaskDetailModal from '../../components/modals/TaskDetailModal';
+import { formatDateStrict } from '../../utils/dateUtils';
 
 function DashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [viewingTask, setViewingTask] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const response = await dashboardService.getOverview();
       setData(response.data.data);
@@ -20,6 +26,30 @@ function DashboardPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleViewTask = (task) => {
+    setViewingTask(task);
+    setShowDetailModal(true);
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await taskService.deleteTask(taskId);
+      fetchDashboard(true);
+      setShowDetailModal(false);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
+  };
+
+  const handleEditTask = (task) => {
+    // Redirect to project detail or tasks page for editing
+    if (task.projectId) {
+      navigate(`/projects/${task.projectId}`);
+    } else {
+      navigate('/tasks');
+    }
+  };
 
   useEffect(() => {
     fetchDashboard();
@@ -81,14 +111,14 @@ function DashboardPage() {
               </div>
               <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Công việc hôm nay</span>
             </div>
-            <h3 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{data?.tasksCompleted || 0}</h3>
+            <h3 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{data?.tasksDoneToday || 0} đã xong</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              <span className="text-emerald-500 font-medium">+{data?.tasksDueToday || 0}</span> việc cần làm
+              <span className="text-emerald-500 font-medium">+{data?.tasksRemainingToday || 0}</span> việc cần làm
             </p>
             <div className="w-full bg-slate-200 dark:bg-white/10 h-1.5 rounded-full mt-4 overflow-hidden">
               <div 
                 className="bg-blue-500 h-full rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-1000" 
-                style={{ width: `${data ? Math.min((data.tasksCompleted / (data.tasksCompleted + (data.tasksDueToday || 1)) * 100), 100) : 0}%` }}
+                style={{ width: `${data ? Math.min((data.tasksDoneToday / Math.max(data.tasksDoneToday + data.tasksRemainingToday, 1) * 100), 100) : 0}%` }}
               ></div>
             </div>
           </div>
@@ -125,18 +155,19 @@ function DashboardPage() {
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
-                <span className="material-icons-round">attach_money</span>
+                <span className="material-icons-round">account_balance</span>
               </div>
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Ngân sách</span>
+              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Số dư tháng này</span>
             </div>
-            <h3 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{formatCurrency(data?.totalExpenseMonth || 0)}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Đã chi: <span className="text-slate-700 dark:text-slate-300 font-medium">{formatCurrency(data?.totalExpenseMonth || 0)}</span>
+            <h3 className="text-3xl font-bold text-slate-800 dark:text-white mb-1">{formatCurrency((data?.totalIncomeMonth || 0) - (data?.totalExpenseMonth || 0))}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 flex justify-between">
+              <span>Thu: {formatCurrency(data?.totalIncomeMonth || 0)}</span>
+              <span>Chi: {formatCurrency(data?.totalExpenseMonth || 0)}</span>
             </p>
             <div className="w-full bg-slate-200 dark:bg-white/10 h-1.5 rounded-full mt-4 overflow-hidden">
               <div 
                 className="bg-amber-500 h-full rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all duration-1000" 
-                style={{ width: `${data ? Math.min((data.totalExpenseMonth / (data.totalIncomeMonth || data.totalExpenseMonth || 1) * 100), 100) : 0}%` }}
+                style={{ width: `${data ? Math.min((data.totalExpenseMonth / Math.max(data.totalIncomeMonth, data.totalExpenseMonth, 1) * 100), 100) : 0}%` }}
               ></div>
             </div>
           </div>
@@ -181,9 +212,13 @@ function DashboardPage() {
           </div>
           <div className="space-y-3">
             {data?.recentTasks?.length > 0 ? data.recentTasks.map((task) => (
-              <div key={task.id} className="group flex items-center p-4 rounded-2xl bg-white/50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 border border-transparent hover:border-primary/20 transition-all duration-200 cursor-pointer">
+              <div 
+                key={task.id} 
+                onClick={() => handleViewTask(task)}
+                className="group flex items-center p-4 rounded-2xl bg-white/50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 border border-transparent hover:border-primary/20 transition-all duration-200 cursor-pointer"
+              >
                 <div className="w-10 flex-shrink-0 flex items-center justify-center">
-                  <button className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-500 group-hover:border-primary hover:bg-primary/20 transition-colors"></button>
+                  <button onClick={(e) => e.stopPropagation()} className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-500 group-hover:border-primary hover:bg-primary/20 transition-colors"></button>
                 </div>
                 <div className="flex-1 ml-2">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{task.title}</h4>
@@ -194,7 +229,7 @@ function DashboardPage() {
                       {task.dueDate ? (
                         <>
                           <span className="material-icons-round text-[10px]">schedule</span>
-                          {new Date(task.dueDate).toLocaleDateString('vi-VN')}
+                          {formatDateStrict(task.dueDate)}
                         </>
                       ) : (
                         <span>Không có hạn</span>
@@ -210,7 +245,7 @@ function DashboardPage() {
                   }`}>
                     {task.status === 'DONE' ? 'Hoàn thành' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Đang chờ'}
                   </span>
-                  <button className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors">
+                  <button onClick={(e) => e.stopPropagation()} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors">
                     <span className="material-icons-round text-lg">more_vert</span>
                   </button>
                 </div>
@@ -317,6 +352,14 @@ function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <TaskDetailModal 
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        task={viewingTask}
+        onEdit={handleEditTask}
+        onDelete={handleDeleteTask}
+      />
     </div>
   );
 }

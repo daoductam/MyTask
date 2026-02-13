@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.controller;
 
 import com.tamdao.my_task_be.dto.request.TransactionRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.TransactionResponse;
 import com.tamdao.my_task_be.entity.FinanceCategory;
 import com.tamdao.my_task_be.service.FinanceService;
@@ -29,10 +30,12 @@ public class FinanceController {
     // Transactions
     @GetMapping("/transactions")
     @Operation(summary = "Lấy giao dịch theo tháng")
-    public ResponseEntity<ApiResponse<List<TransactionResponse>>> getTransactions(
+    public ResponseEntity<ApiResponse<PageResponse<TransactionResponse>>> getTransactions(
             @RequestParam int year,
-            @RequestParam int month) {
-        List<TransactionResponse> transactions = financeService.getTransactionsForMonth(year, month);
+            @RequestParam int month,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<TransactionResponse> transactions = financeService.getTransactionsForMonth(year, month, page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy giao dịch thành công", transactions));
     }
     
@@ -76,6 +79,26 @@ public class FinanceController {
             @RequestParam int month) {
         Map<String, Object> summary = financeService.getMonthlySummary(year, month);
         return ResponseEntity.ok(ApiResponse.success("Lấy tổng hợp thành công", summary));
+    }
+    
+    @GetMapping("/transactions/by-date")
+    @Operation(summary = "Lấy giao dịch theo khoảng ngày")
+    public ResponseEntity<ApiResponse<PageResponse<TransactionResponse>>> getTransactionsByDateRange(
+            @RequestParam String startDate,
+            @RequestParam String endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageResponse<TransactionResponse> transactions = financeService.getTransactionsByDateRange(startDate, endDate, page, size);
+        return ResponseEntity.ok(ApiResponse.success("Lấy giao dịch thành công", transactions));
+    }
+    
+    @GetMapping("/statistics/by-category")
+    @Operation(summary = "Lấy thống kê theo danh mục")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getCategoryStatistics(
+            @RequestParam String startDate,
+            @RequestParam String endDate) {
+        Map<String, Object> statistics = financeService.getCategoryStatistics(startDate, endDate);
+        return ResponseEntity.ok(ApiResponse.success("Lấy thống kê thành công", statistics));
     }
     
     // Categories

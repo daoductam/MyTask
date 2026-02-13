@@ -2,6 +2,7 @@ package com.tamdao.my_task_be.controller;
 
 import com.tamdao.my_task_be.dto.request.WorkspaceRequest;
 import com.tamdao.my_task_be.dto.response.ApiResponse;
+import com.tamdao.my_task_be.dto.response.PageResponse;
 import com.tamdao.my_task_be.dto.response.WorkspaceResponse;
 import com.tamdao.my_task_be.service.WorkspaceService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,7 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+
 
 @RestController
 @RequestMapping("/api/workspaces")
@@ -26,8 +27,10 @@ public class WorkspaceController {
     
     @GetMapping
     @Operation(summary = "Lấy tất cả Workspace của user")
-    public ResponseEntity<ApiResponse<List<WorkspaceResponse>>> getAllWorkspaces() {
-        List<WorkspaceResponse> workspaces = workspaceService.getAllWorkspaces();
+    public ResponseEntity<ApiResponse<PageResponse<WorkspaceResponse>>> getAllWorkspaces(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        PageResponse<WorkspaceResponse> workspaces = workspaceService.getAllWorkspaces(page, size);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách workspace thành công", workspaces));
     }
     
