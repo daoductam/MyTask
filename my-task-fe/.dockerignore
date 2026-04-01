@@ -1,0 +1,7 @@
+node_modules
+dist
+electron
+release_v*
+build_log.txt
+*.md
+.git
